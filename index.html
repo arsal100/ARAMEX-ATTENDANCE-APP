@@ -1,0 +1,2660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Gatehouse Register — Digital Gate Attendance</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@400;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; padding: 0; background: #F5F2EA; }
+  #root { min-height: 100vh; }
+  #boot-fallback { min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    font-family: Inter, system-ui, sans-serif; color: #6B7280; flex-direction: column; gap: 10px; text-align: center; padding: 20px; }
+</style>
+
+<script crossorigin src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7/babel.min.js"></script>
+
+<!-- Firebase compat SDK: optional, only used if the person connects their own
+     Firebase project. Loading it here just defines window.firebase;
+     no network calls happen until initializeApp() is explicitly called. -->
+<script src="https://cdn.jsdelivr.net/npm/firebase@10/firebase-app-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/firebase@10/firebase-auth-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/firebase@10/firebase-firestore-compat.js"></script>
+</head>
+<body>
+<div id="root"><div id="boot-fallback">Loading Gatehouse Register…<br/><small>(needs an internet connection the first time, to load React)</small></div></div>
+
+<script>
+  setTimeout(function () {
+    if (!window.React || !window.ReactDOM || !window.Babel) {
+      var el = document.getElementById("boot-fallback");
+      if (el) {
+        el.innerHTML = "This app couldn't load its required scripts.<br/><br/>" +
+          "<b>If you're viewing this inside the Claude app,</b> try downloading the file and opening it in a separate browser app (Chrome, Safari, etc.) instead of Claude's built-in preview.<br/><br/>" +
+          "<b>If you're already in a real browser,</b> check your internet connection and reload the page.";
+      }
+    }
+  }, 6000);
+</script>
+
+<script>
+  (function () {
+    const PREFIX = "gate_register__";
+    window.storage = {
+      async get(key, shared) {
+        const raw = localStorage.getItem(PREFIX + key);
+        if (raw === null) return null;
+        return { key, value: raw, shared: !!shared };
+      },
+      async set(key, value, shared) {
+        localStorage.setItem(PREFIX + key, value);
+        return { key, value, shared: !!shared };
+      },
+      async delete(key, shared) {
+        localStorage.removeItem(PREFIX + key);
+        return { key, deleted: true, shared: !!shared };
+      },
+      async list(prefix, shared) {
+        const p = PREFIX + (prefix || "");
+        const keys = Object.keys(localStorage).filter((k) => k.startsWith(p)).map((k) => k.slice(PREFIX.length));
+        return { keys, prefix, shared: !!shared };
+      },
+    };
+  })();
+</script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useMemo, useCallback, useRef } = React;
+
+
+/* ---------------------------------------------------------------------
+   ICONS — small hand-drawn set standing in for lucide-react, so this file
+   has zero ES-module / CORS dependencies and works when opened directly
+   from disk (file://) in any browser.
+--------------------------------------------------------------------- */
+function IconBase({ size = 24, color = "currentColor", className, style, children }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
+      {children}
+    </svg>
+  );
+}
+const LogIn = (p) => <IconBase {...p}><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></IconBase>;
+const LogOut = (p) => <IconBase {...p}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></IconBase>;
+const Search = (p) => <IconBase {...p}><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></IconBase>;
+const UserPlus = (p) => <IconBase {...p}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="16" y1="11" x2="22" y2="11"/></IconBase>;
+const Users = (p) => <IconBase {...p}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></IconBase>;
+const ClipboardList = (p) => <IconBase {...p}><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M9 3h6v3H9z"/><line x1="8" y1="11" x2="16" y2="11"/><line x1="8" y1="15" x2="16" y2="15"/><line x1="8" y1="19" x2="12" y2="19"/></IconBase>;
+const BarChart3 = (p) => <IconBase {...p}><line x1="4" y1="20" x2="20" y2="20"/><rect x="6" y="12" width="3" height="7"/><rect x="11" y="7" width="3" height="12"/><rect x="16" y="3" width="3" height="16"/></IconBase>;
+const SettingsIcon = (p) => <IconBase {...p}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></IconBase>;
+const CheckCircle2 = (p) => <IconBase {...p}><circle cx="12" cy="12" r="10"/><polyline points="9 12 11 14 15.5 9.5"/></IconBase>;
+const XCircle = (p) => <IconBase {...p}><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></IconBase>;
+const Clock = (p) => <IconBase {...p}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></IconBase>;
+const DoorOpen = (p) => <IconBase {...p}><path d="M13 4v16"/><path d="M4 20V6a2 2 0 0 1 2-2h7v16"/><path d="M13 10l6 -2v12l-6 -2"/></IconBase>;
+const DoorClosed = (p) => <IconBase {...p}><rect x="5" y="3" width="14" height="18" rx="1"/><circle cx="14.5" cy="12" r="0.8" fill="currentColor" stroke="none"/></IconBase>;
+const AlertTriangle = (p) => <IconBase {...p}><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></IconBase>;
+const Download = (p) => <IconBase {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></IconBase>;
+const FileDown = (p) => <IconBase {...p}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="12" x2="12" y2="18"/><polyline points="9.5 15.5 12 18 14.5 15.5"/></IconBase>;
+const Edit3 = (p) => <IconBase {...p}><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></IconBase>;
+const Trash2 = (p) => <IconBase {...p}><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></IconBase>;
+const ShieldCheck = (p) => <IconBase {...p}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></IconBase>;
+const Home = (p) => <IconBase {...p}><path d="M3 11.5 12 4l9 7.5"/><path d="M5 10v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V10"/></IconBase>;
+const RefreshCw = (p) => <IconBase {...p}><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></IconBase>;
+const ChevronRight = (p) => <IconBase {...p}><polyline points="9 18 15 12 9 6"/></IconBase>;
+const X = (p) => <IconBase {...p}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></IconBase>;
+const Loader2 = (p) => <IconBase {...p}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></IconBase>;
+const Building2 = (p) => <IconBase {...p}><rect x="4" y="3" width="10" height="18"/><rect x="14" y="8" width="6" height="13"/><line x1="7" y1="7" x2="7" y2="7.01"/><line x1="10" y1="7" x2="10" y2="7.01"/><line x1="7" y1="11" x2="7" y2="11.01"/><line x1="10" y1="11" x2="10" y2="11.01"/><line x1="7" y1="15" x2="7" y2="15.01"/><line x1="10" y1="15" x2="10" y2="15.01"/></IconBase>;
+const Phone = (p) => <IconBase {...p}><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.68 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.32 1.85.55 2.81.68A2 2 0 0 1 22 16.92z"/></IconBase>;
+const Briefcase = (p) => <IconBase {...p}><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></IconBase>;
+const CalendarDays = (p) => <IconBase {...p}><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></IconBase>;
+const TimerReset = (p) => <IconBase {...p}><path d="M10 2h4"/><path d="M12 14v-4"/><path d="M4.6 11a8 8 0 1 0 2.9-6.2"/><path d="M4 4v4h4"/></IconBase>;
+const UserCog = (p) => <IconBase {...p}><circle cx="9" cy="7" r="4"/><path d="M2 21v-2a4 4 0 0 1 4-4h3"/><circle cx="18" cy="17" r="3"/><path d="M18 14v.5M18 19.5V20M15.5 17H15M21 17h-.5M16.2 15.2l.3.3M19.5 18.5l.3.3M19.8 15.2l-.3.3M16.5 18.5l-.3.3"/></IconBase>;
+const Eye = (p) => <IconBase {...p}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></IconBase>;
+const EyeOff = (p) => <IconBase {...p}><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a20.3 20.3 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a20.3 20.3 0 0 1-3.22 4.44"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></IconBase>;
+const UserX = (p) => <IconBase {...p}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="17" y1="8" x2="22" y2="13"/><line x1="22" y1="8" x2="17" y2="13"/></IconBase>;
+
+
+/* ---------------------------------------------------------------------
+   TOKENS
+   Navy/charcoal gatehouse palette with a barrier-amber accent.
+   Monospace is used only for real data labels (IDs, timestamps, badges) —
+   the way a logbook or ID card actually uses it.
+--------------------------------------------------------------------- */
+const C = {
+  ink: "#161C24",       // near-black navy, headers
+  navy: "#1E2A38",      // primary surface (dark)
+  slate: "#2C3A4D",     // secondary dark surface
+  paper: "#F5F2EA",     // logbook paper background
+  paperDim: "#EAE6DA",
+  line: "#D8D2C2",
+  amber: "#E3A339",     // barrier amber accent
+  amberDeep: "#B97F1E",
+  green: "#2F7A54",
+  greenDeep: "#1F5B3D",
+  red: "#B3453A",
+  redDeep: "#8C332A",
+  ink50: "#6B7280",
+};
+
+const FONT_SERIF = "'Source Serif 4', Georgia, serif";
+const FONT_SANS = "'Inter', system-ui, -apple-system, sans-serif";
+const FONT_MONO = "'JetBrains Mono', 'SF Mono', Consolas, monospace";
+
+/* ---------------------------------------------------------------------
+   PURE HELPERS
+--------------------------------------------------------------------- */
+const uid = (p = "") => p + Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-4);
+
+async function sha256(text) {
+  try {
+    const enc = new TextEncoder().encode(text);
+    const buf = await crypto.subtle.digest("SHA-256", enc);
+    return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+  } catch {
+    // fallback simple hash if subtle crypto unavailable
+    let h = 0;
+    for (let i = 0; i < text.length; i++) { h = (h << 5) - h + text.charCodeAt(i); h |= 0; }
+    return "fb" + Math.abs(h).toString(16);
+  }
+}
+
+function todayStr(d = new Date()) {
+  const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, "0"), day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+function nowTimeStr(d = new Date()) {
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}`;
+}
+function shiftTimeStr(hhmm, deltaMinutes) {
+  const [h, m] = hhmm.split(":").map(Number);
+  let total = ((h * 60 + m + deltaMinutes) % 1440 + 1440) % 1440;
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
+function fmtTime(t) {
+  if (!t) return "—";
+  const [h, m] = t.split(":");
+  const hh = parseInt(h, 10);
+  const ampm = hh >= 12 ? "PM" : "AM";
+  const h12 = hh % 12 === 0 ? 12 : hh % 12;
+  return `${h12}:${m} ${ampm}`;
+}
+function fmtDate(dstr) {
+  if (!dstr) return "—";
+  const d = new Date(dstr + "T00:00:00");
+  return d.toLocaleDateString(undefined, { weekday: "short", year: "numeric", month: "short", day: "numeric" });
+}
+function minutesBetween(dateStr, timeIn, timeOut) {
+  const a = new Date(`${dateStr}T${timeIn}`);
+  const b = new Date(`${dateStr}T${timeOut}`);
+  let diff = Math.round((b - a) / 60000);
+  if (diff < 0) diff += 1440;
+  return diff;
+}
+function fmtDuration(mins) {
+  if (mins == null) return "—";
+  const h = Math.floor(mins / 60), m = mins % 60;
+  return `${h}h ${m}m`;
+}
+function overtimeMinutes(totalMinutes, shiftHours) {
+  if (totalMinutes == null || !shiftHours) return 0;
+  const limit = shiftHours * 60;
+  return totalMinutes > limit ? totalMinutes - limit : 0;
+}
+function elapsedMinutes(dateStr, timeIn) {
+  return Math.round((Date.now() - new Date(`${dateStr}T${timeIn}`)) / 60000);
+}
+function findLeave(leaves, employeeId, dateStr) {
+  return leaves.find((l) => l.employee_id === employeeId && dateStr >= l.date_from && dateStr <= l.date_to) || null;
+}
+function startOfWeek(d) {
+  const dt = new Date(d);
+  const day = dt.getDay();
+  const diff = dt.getDate() - day;
+  return new Date(dt.setDate(diff));
+}
+function toCSV(rows, headers) {
+  const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const lines = [headers.map((h) => esc(h.label)).join(",")];
+  rows.forEach((r) => lines.push(headers.map((h) => esc(h.get(r))).join(",")));
+  return lines.join("\n");
+}
+function downloadFile(filename, content, mime) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+/* ---------------------------------------------------------------------
+   REPORT SCHEDULING HELPERS
+   Artifacts have no server/cron, so "every day / weekly / monthly" is
+   implemented as a due-reminder inside the app: whoever opens it sees a
+   banner once a report is due, and one tap builds the report and opens
+   it in the device's email app (with the CSV downloaded to attach).
+--------------------------------------------------------------------- */
+function getPeriodRange(freq, ref = new Date()) {
+  const day = todayStr(ref);
+  if (freq === "weekly") {
+    const start = startOfWeek(ref);
+    const end = new Date(start); end.setDate(end.getDate() + 6);
+    return { from: todayStr(start), to: todayStr(end), label: `${fmtDate(todayStr(start))} – ${fmtDate(todayStr(end))}` };
+  }
+  if (freq === "monthly") {
+    const y = ref.getFullYear(), m = ref.getMonth();
+    const from = `${y}-${String(m + 1).padStart(2, "0")}-01`;
+    const last = new Date(y, m + 1, 0).getDate();
+    const to = `${y}-${String(m + 1).padStart(2, "0")}-${String(last).padStart(2, "0")}`;
+    return { from, to, label: ref.toLocaleDateString(undefined, { month: "long", year: "numeric" }) };
+  }
+  return { from: day, to: day, label: fmtDate(day) };
+}
+function isReportDue(rd) {
+  if (!rd || !rd.enabled || !rd.recipient_email) return false;
+  const today = todayStr();
+  if (!rd.last_sent) return true;
+  if (rd.frequency === "weekly") return todayStr(startOfWeek(new Date(rd.last_sent + "T00:00:00"))) !== todayStr(startOfWeek(new Date()));
+  if (rd.frequency === "monthly") return rd.last_sent.slice(0, 7) !== today.slice(0, 7);
+  return rd.last_sent !== today; // daily
+}
+function buildReportPayload(freq, employees, attendance, empById, settings) {
+  const shiftHours = (settings && settings.shift_hours) || 9;
+  const { from, to, label } = getPeriodRange(freq);
+  const rows = attendance.filter((a) => a.date >= from && a.date <= to).map((a) => ({ ...a, emp: empById[a.employee_id] })).filter((r) => r.emp);
+  rows.sort((a, b) => (b.date + b.time_in).localeCompare(a.date + a.time_in));
+  const inside = rows.filter((r) => r.status === "INSIDE").length;
+  const overtimeTotal = rows.reduce((s, r) => s + overtimeMinutes(r.total_minutes, shiftHours), 0);
+  const overtimeCount = rows.filter((r) => overtimeMinutes(r.total_minutes, shiftHours) > 0).length;
+  const totalMinutes = rows.reduce((s, r) => s + (r.total_minutes || 0), 0);
+  const activeCount = employees.filter((e) => e.active).length;
+  const freqLabel = { daily: "Daily", weekly: "Weekly", monthly: "Monthly" }[freq] || "Attendance";
+
+  const subject = `${freqLabel} Gate Attendance Report — ${label}`;
+  const lines = [
+    `${freqLabel} Gate Attendance Report`, `Period: ${label}`, "",
+    `Total active employees: ${activeCount}`, `Attendance records: ${rows.length}`,
+    `Currently inside: ${inside}`, `Standard shift: ${shiftHours}h`, `Overtime records: ${overtimeCount} (${fmtDuration(overtimeTotal)} total)`,
+    `Total hours logged: ${fmtDuration(totalMinutes)}`, "",
+    "Recent entries:",
+    ...rows.slice(0, 15).map((r) => {
+      const ot = overtimeMinutes(r.total_minutes, shiftHours);
+      return `- ${r.date} ${r.emp.name} (${r.emp.employee_number}): IN ${fmtTime(r.time_in)}${r.time_out ? ", OUT " + fmtTime(r.time_out) : " (still inside)"}${ot > 0 ? ` [OVERTIME +${fmtDuration(ot)}]` : ""}`;
+    }),
+    rows.length > 15 ? `…and ${rows.length - 15} more record(s) — see attached CSV for the full list.` : "",
+    "", "Sent from the Gatehouse Register app.",
+  ].filter(Boolean);
+
+  const csvHeaders = [
+    { label: "Date", get: (r) => r.date }, { label: "Employee", get: (r) => r.emp.name }, { label: "Employee ID", get: (r) => r.emp.employee_number },
+    { label: "Company", get: (r) => r.emp.company }, { label: "Time In", get: (r) => r.time_in }, { label: "Time Out", get: (r) => r.time_out || "" },
+    { label: "Total Hours", get: (r) => r.total_minutes != null ? fmtDuration(r.total_minutes) : "" }, { label: "Overtime", get: (r) => fmtDuration(overtimeMinutes(r.total_minutes, shiftHours)) },
+    { label: "Status", get: (r) => r.status }, { label: "Recorded By", get: (r) => r.status === "INSIDE" ? r.checked_in_by : r.checked_out_by },
+  ];
+  return { subject, body: lines.join("\n"), csv: toCSV(rows, csvHeaders), filename: `${freq}-report-${from}_${to}.csv`, label, rowCount: rows.length };
+}
+
+/* ---------------------------------------------------------------------
+   STORAGE LAYER (shared, so guards + admin see one live register)
+--------------------------------------------------------------------- */
+const KEYS = { employees: "employees", users: "users", attendance: "attendance", audit: "auditLogs", settings: "settings", leaves: "leaves" };
+async function loadKey(key, fallback) {
+  try {
+    const res = await window.storage.get(key, true);
+    return res && res.value ? JSON.parse(res.value) : fallback;
+  } catch { return fallback; }
+}
+async function saveKey(key, value) {
+  try { await window.storage.set(key, JSON.stringify(value), true); } catch (e) { console.error("storage save failed", key, e); }
+}
+
+/* ---------------------------------------------------------------------
+   SHARED DB SYNC (Claude's cross-device db capability, when available)
+   Keeps the app's existing "replace the whole array" call sites unchanged
+   by diffing old vs new array and writing only the changed documents —
+   this is what makes two devices checking people in at the same time
+   not clobber each other.
+--------------------------------------------------------------------- */
+function cleanForStore(obj) {
+  // Firestore rejects `undefined` field values outright; Claude's db is fine
+  // with them but there's no reason not to normalize either way.
+  return JSON.parse(JSON.stringify(obj));
+}
+async function syncArrayToCollection(db, collectionPath, prevArray, nextArray) {
+  const prevById = new Map((prevArray || []).map((x) => [x.id, x]));
+  const nextById = new Map((nextArray || []).map((x) => [x.id, x]));
+  const col = db.collection(collectionPath);
+  const ops = [];
+  for (const [id, rec] of nextById) {
+    const prev = prevById.get(id);
+    if (!prev || JSON.stringify(prev) !== JSON.stringify(rec)) ops.push(col.doc(id).set(cleanForStore(rec)));
+  }
+  for (const id of prevById.keys()) {
+    if (!nextById.has(id)) ops.push(col.doc(id).delete());
+  }
+  await Promise.all(ops);
+}
+
+/* ---------------------------------------------------------------------
+   FIREBASE SYNC (optional — for a copy of this app hosted outside Claude,
+   e.g. on GitHub Pages, where Claude's own db capability isn't present).
+   The Firestore compat SDK's collection/doc/onSnapshot shape is close
+   enough to Claude's db capability that it can be used as a drop-in
+   dbApiRef — no separate adapter needed.
+--------------------------------------------------------------------- */
+const FIREBASE_CONFIG_KEY = "gate_register__firebase_config";
+function getSavedFirebaseConfig() {
+  try {
+    const raw = localStorage.getItem(FIREBASE_CONFIG_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+function saveFirebaseConfig(cfg) {
+  localStorage.setItem(FIREBASE_CONFIG_KEY, JSON.stringify(cfg));
+}
+function clearFirebaseConfig() {
+  localStorage.removeItem(FIREBASE_CONFIG_KEY);
+}
+function encodeFirebaseConfig(cfg) {
+  try { return btoa(JSON.stringify(cfg)); } catch { return ""; }
+}
+function decodeFirebaseConfig(code) {
+  try {
+    const cfg = JSON.parse(atob(code.trim()));
+    if (!cfg.apiKey || !cfg.authDomain || !cfg.projectId || !cfg.appId) return null;
+    return cfg;
+  } catch { return null; }
+}
+async function initFirebaseDb(config) {
+  if (!window.firebase) throw new Error("Firebase SDK did not load");
+  const existing = window.firebase.apps && window.firebase.apps.length ? window.firebase.apps[0] : null;
+  const app = existing || window.firebase.initializeApp(config);
+  const auth = window.firebase.auth(app);
+  if (!auth.currentUser) await auth.signInAnonymously();
+  return window.firebase.firestore(app);
+}
+
+/* ---------------------------------------------------------------------
+   DATA SEEDING
+   buildFreshData: what a brand-new install actually starts with — real
+   login accounts only, zero employees/attendance, ready for real data.
+   buildSampleData: optional, fuller dataset with 15 demo employees and
+   sample attendance, available from Settings for testing/demo purposes.
+--------------------------------------------------------------------- */
+async function buildAccounts() {
+  const guard1pw = await sha256("guard123");
+  const guard2pw = await sha256("guard123");
+  const adminpw = await sha256("manager123");
+  return [
+    { id: "u_admin", name: "Mr Shihabuddin", username: "shihabuddin", passwordHash: adminpw, role: "admin", active: true, created_at: Date.now() },
+    { id: "u_g1", name: "Arslan Ahmed", username: "arslan", passwordHash: guard1pw, role: "guard", active: true, created_at: Date.now() },
+    { id: "u_g2", name: "Amir Hamja", username: "amir", passwordHash: guard2pw, role: "guard", active: true, created_at: Date.now() },
+  ];
+}
+function defaultSettings() {
+  return {
+    shift_hours: 9,
+    report_delivery: { enabled: false, recipient_name: "", recipient_email: "", frequency: "daily", time: "18:00", last_sent: null },
+  };
+}
+async function buildFreshData() {
+  return { users: await buildAccounts(), employees: [], attendance: [], audit: [], leaves: [], settings: defaultSettings() };
+}
+async function buildSampleData() {
+  const users = await buildAccounts();
+  const companies = ["Northgate Logistics", "Vantage Engineering", "Coastal Retail Group"];
+  const depts = ["Operations", "Warehouse", "Finance", "IT", "Maintenance", "HR"];
+  const names = [
+    "James Mwangi", "Alice Wanjiru", "David Njoroge", "Mary Achieng", "John Kamau",
+    "Faith Wambui", "Brian Odhiambo", "Catherine Nyambura", "Kevin Mutua", "Lucy Chebet",
+    "Daniel Kiprono", "Esther Adhiambo", "Michael Wafula", "Grace Auma", "Tom Kilonzo",
+  ];
+  const employees = names.map((name, i) => ({
+    id: uid("e_"),
+    employee_number: `EMP-${String(1001 + i)}`,
+    name,
+    company: companies[i % companies.length],
+    department: depts[i % depts.length],
+    designation: ["Technician", "Clerk", "Supervisor", "Analyst", "Driver", "Officer"][i % 6],
+    phone: `07${String(10000000 + i * 137).slice(0, 8)}`,
+    active: true,
+    created_at: Date.now(),
+    updated_at: Date.now(),
+    demo: true,
+  }));
+
+  const today = todayStr();
+  const attendance = [];
+  const audit = [];
+  // 6 checked out earlier today, one running into overtime
+  [0, 1, 2, 3, 4, 5].forEach((i, idx) => {
+    const timeIn = idx % 3 === 0 ? "06:35:00" : "05:52:00";
+    const timeOut = idx === 0 ? "16:05:00" : "14:1" + idx + ":00"; // idx 0 runs past a 9h shift
+    const mins = minutesBetween(today, timeIn, timeOut);
+    attendance.push({
+      id: uid("a_"), employee_id: employees[i].id, date: today,
+      time_in: timeIn, time_out: timeOut, total_minutes: mins,
+      status: "CHECKED_OUT", checked_in_by: "Arslan Ahmed", checked_out_by: "Amir Hamja",
+      remarks_in: "", remarks_out: "", created_at: Date.now(), updated_at: Date.now(), demo: true,
+    });
+  });
+  // 4 currently inside
+  [6, 7, 8, 9].forEach((i, idx) => {
+    const timeIn = idx === 0 ? "07:10:00" : "06:0" + idx + ":00";
+    attendance.push({
+      id: uid("a_"), employee_id: employees[i].id, date: today,
+      time_in: timeIn, time_out: null, total_minutes: null,
+      status: "INSIDE", checked_in_by: idx % 2 ? "Amir Hamja" : "Arslan Ahmed", checked_out_by: null,
+      remarks_in: idx === 0 ? "Official duty" : "", remarks_out: "",
+      created_at: Date.now(), updated_at: Date.now(), demo: true,
+    });
+  });
+  // yesterday history for a couple employees (for reports/history depth)
+  const y = todayStr(new Date(Date.now() - 86400000));
+  [0, 1, 6, 10].forEach((i, idx) => {
+    const timeIn = "06:1" + idx + ":00";
+    const timeOut = "14:0" + idx + ":00";
+    attendance.push({
+      id: uid("a_"), employee_id: employees[i].id, date: y,
+      time_in: timeIn, time_out: timeOut, total_minutes: minutesBetween(y, timeIn, timeOut),
+      status: "CHECKED_OUT", checked_in_by: "Arslan Ahmed", checked_out_by: "Arslan Ahmed",
+      remarks_in: "", remarks_out: "", created_at: Date.now(), updated_at: Date.now(), demo: true,
+    });
+  });
+
+  const settings = {
+    ...defaultSettings(),
+  };
+  return { users, employees, attendance, audit, leaves: [], settings };
+}
+
+/* ---------------------------------------------------------------------
+   SMALL UI PRIMITIVES
+--------------------------------------------------------------------- */
+function Badge({ tone = "neutral", children }) {
+  const tones = {
+    inside: { bg: "#EAF4EC", fg: C.greenDeep, bd: "#BFE0C9" },
+    out: { bg: "#F3ECE8", fg: "#6B4B3E", bd: "#E1CFC4" },
+    overtime: { bg: "#FCEFE0", fg: C.amberDeep, bd: "#F2D6A6" },
+    missing: { bg: "#F7E7E5", fg: C.redDeep, bd: "#E9C3BE" },
+    neutral: { bg: "#EDEAE0", fg: C.ink, bd: C.line },
+  };
+  const t = tones[tone] || tones.neutral;
+  return (
+    <span style={{ background: t.bg, color: t.fg, border: `1px solid ${t.bd}`, fontFamily: FONT_MONO, fontSize: 11, letterSpacing: 0.3, padding: "3px 8px", borderRadius: 4, fontWeight: 600, whiteSpace: "nowrap" }}>
+      {children}
+    </span>
+  );
+}
+
+function StatCard({ label, value, icon: Icon, tone }) {
+  const tones = { amber: C.amber, green: C.green, red: C.red, navy: C.navy, slate: C.slate };
+  const bar = tones[tone] || C.slate;
+  return (
+    <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, padding: "14px 16px", position: "relative", overflow: "hidden", boxShadow: "0 1px 2px rgba(22,28,36,0.04)" }}>
+      <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 4, background: bar }} />
+      <div style={{ display: "flex", alignItems: "center", gap: 8, color: C.ink50, marginBottom: 6 }}>
+        <Icon size={14} />
+        <span style={{ fontSize: 11.5, fontFamily: FONT_SANS, fontWeight: 600, textTransform: "none" }}>{label}</span>
+      </div>
+      <div style={{ fontFamily: FONT_SERIF, fontSize: 28, fontWeight: 600, color: C.ink }}>{value}</div>
+    </div>
+  );
+}
+
+function Btn({ children, onClick, tone = "navy", size = "md", full, icon: Icon, disabled, type = "button" }) {
+  const tones = {
+    navy: { bg: C.navy, fg: "#fff", bd: C.navy },
+    amber: { bg: C.amber, fg: C.ink, bd: C.amberDeep },
+    green: { bg: C.green, fg: "#fff", bd: C.greenDeep },
+    red: { bg: C.red, fg: "#fff", bd: C.redDeep },
+    ghost: { bg: "transparent", fg: C.navy, bd: C.line },
+    paper: { bg: "#fff", fg: C.navy, bd: C.line },
+  };
+  const t = tones[tone];
+  const sizes = { sm: { pad: "8px 12px", fs: 13 }, md: { pad: "11px 16px", fs: 14.5 }, lg: { pad: "18px 20px", fs: 18 } };
+  const s = sizes[size];
+  return (
+    <button
+      type={type}
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8,
+        background: disabled ? "#C9C4B6" : t.bg, color: disabled ? "#8A8474" : t.fg,
+        border: `1px solid ${disabled ? "#C9C4B6" : t.bd}`, borderRadius: 8, padding: s.pad,
+        fontFamily: FONT_SANS, fontWeight: 600, fontSize: s.fs, width: full ? "100%" : undefined,
+        cursor: disabled ? "not-allowed" : "pointer", transition: "transform 0.05s ease",
+      }}
+      onMouseDown={(e) => { if (!disabled) e.currentTarget.style.transform = "scale(0.98)"; }}
+      onMouseUp={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
+    >
+      {Icon && <Icon size={s.fs + 2} />}
+      {children}
+    </button>
+  );
+}
+
+function Field({ label, children }) {
+  return (
+    <label style={{ display: "block", marginBottom: 12 }}>
+      <div style={{ fontSize: 12.5, fontFamily: FONT_SANS, fontWeight: 600, color: C.ink50, marginBottom: 5 }}>{label}</div>
+      {children}
+    </label>
+  );
+}
+const inputStyle = {
+  width: "100%", boxSizing: "border-box", border: `1px solid ${C.line}`, borderRadius: 7,
+  padding: "10px 12px", fontFamily: FONT_SANS, fontSize: 14.5, background: "#fff", color: C.ink,
+};
+
+function Toast({ toast }) {
+  if (!toast) return null;
+  const ok = toast.type !== "error";
+  return (
+    <div style={{
+      position: "fixed", top: 14, left: "50%", transform: "translateX(-50%)", zIndex: 200,
+      background: ok ? C.greenDeep : C.redDeep, color: "#fff", padding: "12px 18px", borderRadius: 9,
+      fontFamily: FONT_SANS, fontSize: 14, fontWeight: 600, boxShadow: "0 6px 20px rgba(0,0,0,0.25)",
+      display: "flex", alignItems: "center", gap: 8, maxWidth: "90vw",
+    }}>
+      {ok ? <CheckCircle2 size={17} /> : <AlertTriangle size={17} />}
+      <span>{toast.msg}</span>
+    </div>
+  );
+}
+
+function Modal({ title, onClose, children, wide }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(22,28,36,0.55)", zIndex: 150, display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        background: C.paper, width: "100%", maxWidth: wide ? 640 : 460, maxHeight: "88vh", overflowY: "auto",
+        borderRadius: "16px 16px 0 0", padding: 20, boxShadow: "0 -8px 30px rgba(0,0,0,0.3)",
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <h3 style={{ fontFamily: FONT_SERIF, fontSize: 19, color: C.ink, margin: 0 }}>{title}</h3>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: C.ink50, padding: 4 }}><X size={20} /></button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function EmptyState({ icon: Icon, title, sub }) {
+  return (
+    <div style={{ textAlign: "center", padding: "40px 20px", color: C.ink50 }}>
+      <Icon size={30} style={{ opacity: 0.4, marginBottom: 10 }} />
+      <div style={{ fontFamily: FONT_SANS, fontWeight: 600, fontSize: 14.5, color: C.ink }}>{title}</div>
+      {sub && <div style={{ fontSize: 13, marginTop: 4 }}>{sub}</div>}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------
+   APP
+--------------------------------------------------------------------- */
+function App() {
+  const [booted, setBooted] = useState(false);
+  const [employees, setEmployees] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [attendance, setAttendance] = useState([]);
+  const [audit, setAudit] = useState([]);
+  const [leaves, setLeaves] = useState([]);
+  const [settings, setSettings] = useState({ shift_hours: 9, report_delivery: { enabled: false, recipient_name: "", recipient_email: "", frequency: "daily", time: "18:00", last_sent: null } });
+  const [session, setSession] = useState(null); // {id,name,role}
+  const [view, setView] = useState("dashboard");
+  const [toast, setToast] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [syncMode, setSyncMode] = useState("checking"); // "checking" | "synced" | "firebase" | "local"
+  const [canWriteShared, setCanWriteShared] = useState(null); // null = unknown/not applicable (Claude-sync only)
+  const [firebaseError, setFirebaseError] = useState("");
+  const dbApiRef = useRef(null);
+  const dbModeRef = useRef("local");
+  const employeesRef = useRef(employees); employeesRef.current = employees;
+  const usersRef = useRef(users); usersRef.current = users;
+  const attendanceRef = useRef(attendance); attendanceRef.current = attendance;
+  const auditRef = useRef(audit); auditRef.current = audit;
+  const leavesRef = useRef(leaves); leavesRef.current = leaves;
+
+  const notify = useCallback((msg, type = "ok") => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 2800);
+  }, []);
+
+  // LOCAL (per-device) boot path — used when the shared db capability
+  // isn't available: a downloaded standalone file, or an older preview.
+  const bootLocal = useCallback(async () => {
+    let emp = await loadKey(KEYS.employees, null);
+    let usr = await loadKey(KEYS.users, null);
+    let att = await loadKey(KEYS.attendance, null);
+    let aud = await loadKey(KEYS.audit, null);
+    let lv = await loadKey(KEYS.leaves, null);
+    let set = await loadKey(KEYS.settings, null);
+    if (!usr || !Array.isArray(usr) || usr.length === 0) {
+      const fresh = await buildFreshData();
+      emp = emp && Array.isArray(emp) && emp.length ? emp : fresh.employees;
+      usr = fresh.users;
+      att = att && Array.isArray(att) ? att : fresh.attendance;
+      aud = aud && Array.isArray(aud) ? aud : fresh.audit;
+      lv = lv && Array.isArray(lv) ? lv : fresh.leaves;
+      set = set || fresh.settings;
+      await Promise.all([
+        saveKey(KEYS.employees, emp), saveKey(KEYS.users, usr), saveKey(KEYS.attendance, att),
+        saveKey(KEYS.audit, aud), saveKey(KEYS.leaves, lv), saveKey(KEYS.settings, set),
+      ]);
+    }
+    setEmployees(emp || []); setUsers(usr || []); setAttendance(att || []);
+    setAudit(aud || []); setLeaves(lv || []);
+    setSettings({ ...defaultSettings(), ...(set || {}) });
+    setSyncMode("local");
+    setBooted(true);
+  }, []);
+
+  // SYNCED (shared db) boot path — live subscriptions so every device
+  // that opens this page sees the same data in real time.
+  useEffect(() => {
+    let cancelled = false;
+    let unsubs = [];
+    (async () => {
+      let db = null;
+      let mode = "local";
+
+      const fbConfig = getSavedFirebaseConfig();
+      if (fbConfig) {
+        try {
+          db = await initFirebaseDb(fbConfig);
+          mode = "firebase";
+        } catch (e) {
+          console.error("Firebase connect failed", e);
+          setFirebaseError(e && e.message ? e.message : "Could not connect to Firebase");
+        }
+      }
+
+      let hasClaude = false;
+      if (!db) {
+        hasClaude = typeof window !== "undefined" && window.claude && typeof window.claude.use === "function";
+        db = hasClaude ? await window.claude.use("db") : null;
+        if (db) mode = "synced";
+      }
+
+      if (cancelled) return;
+      if (!db) { bootLocal(); return; }
+      dbApiRef.current = db;
+      dbModeRef.current = mode;
+
+      if (mode === "synced") {
+        const userCap = hasClaude ? await window.claude.use("user") : null;
+        if (userCap && !cancelled) {
+          try { setCanWriteShared(await userCap.can("data.write")); } catch { setCanWriteShared(null); }
+        }
+      }
+
+      let usersSeeded = false;
+      const unsubUsers = db.collection("users").onSnapshot(async (snap) => {
+        if (cancelled) return;
+        if (snap.empty && !usersSeeded) {
+          usersSeeded = true;
+          try {
+            const accounts = await buildAccounts();
+            await Promise.all(accounts.map((a) => db.collection("users").doc(a.id).set(a)));
+          } catch (e) { console.error("seed accounts failed", e); }
+          return; // the write above will re-trigger this snapshot with real data
+        }
+        setUsers(snap.docs.map((d) => d.data()));
+        setBooted(true);
+        setSyncMode(mode);
+      }, (err) => {
+        console.error("users sync error", err);
+        if (mode === "firebase") setFirebaseError((err && err.message) || "Firebase rejected the connection — check your Firestore rules.");
+        bootLocal();
+      });
+      unsubs.push(unsubUsers);
+
+      unsubs.push(db.collection("employees").onSnapshot((snap) => {
+        if (!cancelled) setEmployees(snap.docs.map((d) => d.data()));
+      }, (err) => console.error("employees sync error", err)));
+
+      unsubs.push(db.collection("attendance").onSnapshot((snap) => {
+        if (!cancelled) setAttendance(snap.docs.map((d) => d.data()));
+      }, (err) => console.error("attendance sync error", err)));
+
+      unsubs.push(db.collection("auditLogs").onSnapshot((snap) => {
+        if (!cancelled) setAudit(snap.docs.map((d) => d.data()));
+      }, (err) => console.error("audit sync error", err)));
+
+      unsubs.push(db.collection("leaves").onSnapshot((snap) => {
+        if (!cancelled) setLeaves(snap.docs.map((d) => d.data()));
+      }, (err) => console.error("leaves sync error", err)));
+
+      unsubs.push(db.doc("config/app").onSnapshot((snap) => {
+        if (cancelled) return;
+        const data = snap.exists ? snap.data() : null;
+        setSettings({ ...defaultSettings(), ...(data || {}) });
+        if (!snap.exists) {
+          // first run: write the defaults so later readers see them too
+          db.doc("config/app").set(defaultSettings()).catch((e) => console.error("settings seed failed", e));
+        }
+      }, (err) => console.error("settings sync error", err)));
+    })();
+    return () => { cancelled = true; unsubs.forEach((u) => { try { u(); } catch {} }); };
+  }, [bootLocal]);
+
+  const persist = {
+    employees: async (next) => {
+      setEmployees(next);
+      const db = dbApiRef.current;
+      if (db) await syncArrayToCollection(db, "employees", employeesRef.current, next);
+      else await saveKey(KEYS.employees, next);
+    },
+    users: async (next) => {
+      setUsers(next);
+      const db = dbApiRef.current;
+      if (db) await syncArrayToCollection(db, "users", usersRef.current, next);
+      else await saveKey(KEYS.users, next);
+    },
+    attendance: async (next) => {
+      setAttendance(next);
+      const db = dbApiRef.current;
+      if (db) await syncArrayToCollection(db, "attendance", attendanceRef.current, next);
+      else await saveKey(KEYS.attendance, next);
+    },
+    audit: async (next) => {
+      setAudit(next);
+      const db = dbApiRef.current;
+      if (db) await syncArrayToCollection(db, "auditLogs", auditRef.current, next);
+      else await saveKey(KEYS.audit, next);
+    },
+    leaves: async (next) => {
+      setLeaves(next);
+      const db = dbApiRef.current;
+      if (db) await syncArrayToCollection(db, "leaves", leavesRef.current, next);
+      else await saveKey(KEYS.leaves, next);
+    },
+    settings: async (next) => {
+      setSettings(next);
+      const db = dbApiRef.current;
+      if (db) await db.doc("config/app").set(next);
+      else await saveKey(KEYS.settings, next);
+    },
+  };
+
+  const fixLoginAccounts = useCallback(async () => {
+    const accounts = await buildAccounts();
+    await persist.users(accounts);
+    notify("Login accounts reset. Try shihabuddin / manager123, arslan / guard123, or amir / guard123.");
+  }, [notify]);
+  const empById = useMemo(() => Object.fromEntries(employees.map((e) => [e.id, e])), [employees]);
+  const today = todayStr();
+
+  const sendReport = useCallback(async (freq) => {
+    const rd = settings.report_delivery || {};
+    if (!rd.recipient_email) { notify("Add the manager's email in Settings → Report Delivery first", "error"); return; }
+    const payload = buildReportPayload(freq, employees, attendance, empById, settings);
+    downloadFile(payload.filename, payload.csv, "text/csv");
+    const body = payload.body + "\n\n(A CSV of the full period was just downloaded to your device — attach it to this email before sending.)";
+    const mailto = `mailto:${encodeURIComponent(rd.recipient_email)}?subject=${encodeURIComponent(payload.subject)}&body=${encodeURIComponent(body)}`;
+    const a = document.createElement("a");
+    a.href = mailto; a.target = "_blank";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    await persist.settings({ ...settings, report_delivery: { ...rd, last_sent: todayStr() } });
+    notify(`${payload.label} report ready — check your email app`);
+  }, [settings, employees, attendance, empById, notify]);
+
+  if (!booted) {
+    return (
+      <div style={{ minHeight: "100vh", background: C.paper, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 10 }}>
+        <Loader2 className="spin" size={26} color={C.navy} />
+        <div style={{ fontFamily: FONT_SANS, color: C.ink50, fontSize: 13 }}>Opening the gate register…</div>
+        <style>{`.spin{animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return <LoginScreen users={users} onLogin={setSession} notify={notify} onResetAccounts={fixLoginAccounts} />;
+  }
+
+  return (
+    <div style={{ minHeight: "100vh", background: C.paper, fontFamily: FONT_SANS, paddingBottom: 74 }}>
+      <style>{`
+        @media print {
+          .no-print { display: none !important; }
+          body { background: #fff !important; }
+        }
+        ::selection { background: ${C.amber}; color: ${C.ink}; }
+      `}</style>
+      <Toast toast={toast} />
+      <Header session={session} onLogout={() => { setSession(null); setView("dashboard"); }} syncMode={syncMode} canWriteShared={canWriteShared} />
+      {syncMode === "synced" && canWriteShared === false && (
+        <div style={{ background: "#FCEFE0", borderBottom: `1px solid #F2D6A6`, padding: "9px 14px", textAlign: "center", fontSize: 12.5, color: C.amberDeep }}>
+          You can see live data here, but can't save changes yet — ask whoever owns this page to give you edit access (see Settings for details).
+        </div>
+      )}
+      <main style={{ maxWidth: 960, margin: "0 auto", padding: "16px 14px 30px" }}>
+        {view === "dashboard" && (
+          <Dashboard
+            session={session} employees={employees} attendance={attendance} settings={settings}
+            empById={empById} today={today} goto={setView} sendReport={sendReport} leaves={leaves}
+          />
+        )}
+        {view === "checkin" && (
+          <CheckInScreen
+            session={session} employees={employees} attendance={attendance} settings={settings} leaves={leaves}
+            persistAttendance={persist.attendance} audit={audit} persistAudit={persist.audit}
+            notify={notify} today={today}
+          />
+        )}
+        {view === "checkout" && (
+          <CheckOutScreen
+            session={session} employees={employees} attendance={attendance} settings={settings}
+            persistAttendance={persist.attendance} audit={audit} persistAudit={persist.audit}
+            notify={notify} today={today}
+          />
+        )}
+        {view === "attendance" && (
+          <AttendanceToday
+            employees={employees} attendance={attendance} empById={empById} today={today} settings={settings} leaves={leaves}
+          />
+        )}
+        {view === "history" && (
+          <HistoryScreen employees={employees} attendance={attendance} empById={empById} session={session} settings={settings}
+            persistAttendance={persist.attendance} audit={audit} persistAudit={persist.audit} notify={notify} />
+        )}
+        {view === "leave" && (
+          <LeaveScreen session={session} employees={employees} empById={empById} leaves={leaves}
+            persistLeaves={persist.leaves} notify={notify} />
+        )}
+        {view === "employees" && session.role === "admin" && (
+          <EmployeesScreen employees={employees} persistEmployees={persist.employees} notify={notify} />
+        )}
+        {view === "reports" && session.role === "admin" && (
+          <ReportsScreen employees={employees} attendance={attendance} empById={empById} settings={settings} />
+        )}
+        {view === "settings" && session.role === "admin" && (
+          <SettingsScreen settings={settings} persistSettings={persist.settings} users={users}
+            persistUsers={persist.users} notify={notify} sendReport={sendReport} syncMode={syncMode} canWriteShared={canWriteShared} firebaseError={firebaseError}
+            loadSample={async () => {
+              setBusy(true);
+              const sample = await buildSampleData();
+              await persist.employees(sample.employees); await persist.users(sample.users);
+              await persist.attendance(sample.attendance); await persist.audit(sample.audit);
+              await persist.leaves(sample.leaves); await persist.settings(sample.settings);
+              setBusy(false);
+              notify("Sample data loaded");
+            }}
+            eraseAll={async () => {
+              setBusy(true);
+              const fresh = await buildFreshData();
+              await persist.employees(fresh.employees); await persist.users(fresh.users);
+              await persist.attendance(fresh.attendance); await persist.audit(fresh.audit);
+              await persist.leaves(fresh.leaves); await persist.settings(fresh.settings);
+              setBusy(false);
+              notify("All data erased — starting fresh");
+            }}
+            busy={busy}
+          />
+        )}
+      </main>
+      <BottomNav view={view} setView={setView} role={session.role} />
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------
+   HEADER + NAV
+--------------------------------------------------------------------- */
+function Header({ session, onLogout, syncMode, canWriteShared }) {
+  return (
+    <header style={{ background: C.navy, color: "#fff", padding: "14px 16px", position: "sticky", top: 0, zIndex: 40, borderBottom: `3px solid ${C.amber}` }}>
+      <div style={{ maxWidth: 960, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 34, height: 34, borderRadius: 7, background: C.amber, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <ShieldCheck size={19} color={C.ink} />
+          </div>
+          <div>
+            <div style={{ fontFamily: FONT_SERIF, fontSize: 16.5, lineHeight: 1.1 }}>Gatehouse Register</div>
+            <div style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: "#C7CEDB", letterSpacing: 0.3, display: "flex", alignItems: "center", gap: 5 }}>
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: syncMode === "firebase" ? "#5BC98A" : syncMode === "synced" ? (canWriteShared === false ? C.amber : "#5BC98A") : "#C7CEDB", display: "inline-block" }} />
+              {syncMode === "firebase" ? "SYNCED VIA FIREBASE" : syncMode === "synced" ? (canWriteShared === false ? "SYNCED · READ-ONLY" : "SYNCED ACROSS DEVICES") : "LOCAL DEVICE ONLY"}
+            </div>
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>{session.name}</div>
+            <div style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: C.amber }}>{session.role.toUpperCase()}</div>
+          </div>
+          <button onClick={onLogout} title="Log out" style={{ background: "rgba(255,255,255,0.1)", border: "none", borderRadius: 7, padding: 8, cursor: "pointer", color: "#fff" }}>
+            <LogOut size={17} />
+          </button>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function BottomNav({ view, setView, role }) {
+  const items = [
+    { id: "dashboard", label: "Dashboard", icon: Home, roles: ["admin", "guard"] },
+    { id: "checkin", label: "Check In", icon: DoorOpen, roles: ["admin", "guard"] },
+    { id: "checkout", label: "Check Out", icon: DoorClosed, roles: ["admin", "guard"] },
+    { id: "attendance", label: "Today", icon: ClipboardList, roles: ["admin", "guard"] },
+    { id: "history", label: "History", icon: CalendarDays, roles: ["admin", "guard"] },
+    { id: "leave", label: "Leave", icon: UserX, roles: ["admin", "guard"] },
+    { id: "employees", label: "Employees", icon: Users, roles: ["admin"] },
+    { id: "reports", label: "Reports", icon: BarChart3, roles: ["admin"] },
+    { id: "settings", label: "Settings", icon: SettingsIcon, roles: ["admin"] },
+  ].filter((i) => i.roles.includes(role));
+
+  return (
+    <nav className="no-print" style={{
+      position: "fixed", bottom: 0, left: 0, right: 0, background: "#fff", borderTop: `1px solid ${C.line}`,
+      display: "flex", overflowX: "auto", zIndex: 40, boxShadow: "0 -4px 14px rgba(0,0,0,0.06)",
+    }}>
+      {items.map((it) => {
+        const active = view === it.id;
+        return (
+          <button key={it.id} onClick={() => setView(it.id)} style={{
+            flex: "1 0 auto", minWidth: 68, display: "flex", flexDirection: "column", alignItems: "center",
+            gap: 3, padding: "9px 8px 8px", background: "none", border: "none", cursor: "pointer",
+            color: active ? C.navy : C.ink50, borderTop: active ? `2px solid ${C.amber}` : "2px solid transparent",
+          }}>
+            <it.icon size={19} />
+            <span style={{ fontSize: 10.5, fontFamily: FONT_SANS, fontWeight: 600 }}>{it.label}</span>
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
+/* ---------------------------------------------------------------------
+   LOGIN
+--------------------------------------------------------------------- */
+function FirebaseConnectPanel({ onConnected, initial }) {
+  const [mode, setMode] = useState("code"); // "code" | "manual"
+  const [code, setCode] = useState("");
+  const [fbForm, setFbForm] = useState(initial || { apiKey: "", authDomain: "", projectId: "", storageBucket: "", messagingSenderId: "", appId: "" });
+  const [error, setError] = useState("");
+
+  const connectWithCode = () => {
+    const cfg = decodeFirebaseConfig(code);
+    if (!cfg) { setError("That code doesn't look right — ask the admin to resend it."); return; }
+    saveFirebaseConfig(cfg);
+    onConnected();
+  };
+  const connectManual = () => {
+    if (!fbForm.apiKey.trim() || !fbForm.authDomain.trim() || !fbForm.projectId.trim() || !fbForm.appId.trim()) {
+      setError("API Key, Auth Domain, Project ID, and App ID are required"); return;
+    }
+    saveFirebaseConfig(fbForm);
+    onConnected();
+  };
+
+  return (
+    <div>
+      {mode === "code" ? (
+        <>
+          <Field label="Connection code (from your admin)">
+            <textarea style={{ ...inputStyle, minHeight: 64, fontFamily: FONT_MONO, fontSize: 11.5 }} value={code}
+              onChange={(e) => { setCode(e.target.value); setError(""); }} placeholder="Paste the code your admin sent you" />
+          </Field>
+          {error && <div style={{ color: C.redDeep, fontSize: 12, marginBottom: 8 }}>{error}</div>}
+          <Btn full tone="navy" onClick={connectWithCode} disabled={!code.trim()}>Connect</Btn>
+          <button type="button" onClick={() => { setMode("manual"); setError(""); }} style={{ background: "none", border: "none", color: C.ink50, fontSize: 11.5, marginTop: 10, cursor: "pointer", textDecoration: "underline", display: "block" }}>
+            Enter the Firebase details manually instead
+          </button>
+        </>
+      ) : (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <Field label="API Key"><input style={inputStyle} value={fbForm.apiKey} onChange={(e) => setFbForm((f) => ({ ...f, apiKey: e.target.value }))} /></Field>
+            <Field label="Auth Domain"><input style={inputStyle} value={fbForm.authDomain} onChange={(e) => setFbForm((f) => ({ ...f, authDomain: e.target.value }))} /></Field>
+            <Field label="Project ID"><input style={inputStyle} value={fbForm.projectId} onChange={(e) => setFbForm((f) => ({ ...f, projectId: e.target.value }))} /></Field>
+            <Field label="App ID"><input style={inputStyle} value={fbForm.appId} onChange={(e) => setFbForm((f) => ({ ...f, appId: e.target.value }))} /></Field>
+            <Field label="Storage Bucket (optional)"><input style={inputStyle} value={fbForm.storageBucket} onChange={(e) => setFbForm((f) => ({ ...f, storageBucket: e.target.value }))} /></Field>
+            <Field label="Sender ID (optional)"><input style={inputStyle} value={fbForm.messagingSenderId} onChange={(e) => setFbForm((f) => ({ ...f, messagingSenderId: e.target.value }))} /></Field>
+          </div>
+          {error && <div style={{ color: C.redDeep, fontSize: 12, marginBottom: 8 }}>{error}</div>}
+          <Btn full tone="navy" onClick={connectManual}>Connect</Btn>
+          <button type="button" onClick={() => { setMode("code"); setError(""); }} style={{ background: "none", border: "none", color: C.ink50, fontSize: 11.5, marginTop: 10, cursor: "pointer", textDecoration: "underline", display: "block" }}>
+            Use a connection code instead
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+function LoginScreen({ users, onLogin, notify, onResetAccounts }) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [show, setShow] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [confirmingReset, setConfirmingReset] = useState(false);
+  const [showFbConnect, setShowFbConnect] = useState(false);
+  const [fbJustConnected, setFbJustConnected] = useState(false);
+  const alreadyConnected = !!getSavedFirebaseConfig();
+
+  const doLogin = async (u, p) => {
+    setError("");
+    if (!u.trim() || !p) { setError("Enter a username and password."); return; }
+    if (!users || users.length === 0) { setError("Accounts haven't finished loading yet — wait a second and try again."); return; }
+    setBusy(true);
+    let hash;
+    try {
+      hash = await sha256(p);
+    } catch (e) {
+      setBusy(false);
+      setError("This device couldn't process the login securely. Try reloading the app.");
+      return;
+    }
+    const match = users.find((x) => x.username.trim().toLowerCase() === u.trim().toLowerCase());
+    setBusy(false);
+    if (!match) { setError(`No account found for username "${u.trim()}".`); return; }
+    if (!match.active) { setError("This account has been disabled by the admin."); return; }
+    if (match.passwordHash !== hash) { setError("Incorrect password."); return; }
+    onLogin({ id: match.id, name: match.name, role: match.role });
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", background: C.navy, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div style={{ width: "100%", maxWidth: 360 }}>
+        <div style={{ textAlign: "center", marginBottom: 26 }}>
+          <div style={{ width: 54, height: 54, borderRadius: 12, background: C.amber, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px" }}>
+            <ShieldCheck size={28} color={C.ink} />
+          </div>
+          <div style={{ fontFamily: FONT_SERIF, fontSize: 24, color: "#fff" }}>Gatehouse Register</div>
+          <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: "#8B96A8", letterSpacing: 0.5, marginTop: 3 }}>DIGITAL GATE ATTENDANCE · V1</div>
+        </div>
+
+        <div style={{ background: C.paper, borderRadius: 14, padding: 22, boxShadow: "0 20px 50px rgba(0,0,0,0.35)" }}>
+          <form onSubmit={(e) => { e.preventDefault(); doLogin(username, password); }}>
+            <Field label="Username">
+              <input style={inputStyle} value={username} onChange={(e) => setUsername(e.target.value)} placeholder="e.g. arslan" autoFocus autoCapitalize="none" autoCorrect="off" />
+            </Field>
+            <Field label="Password">
+              <div style={{ position: "relative" }}>
+                <input style={{ ...inputStyle, paddingRight: 38 }} type={show ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" autoCapitalize="none" autoCorrect="off" />
+                <button type="button" onClick={() => setShow((s) => !s)} style={{ position: "absolute", right: 8, top: 8, background: "none", border: "none", color: C.ink50, cursor: "pointer" }}>
+                  {show ? <EyeOff size={17} /> : <Eye size={17} />}
+                </button>
+              </div>
+            </Field>
+            {error && (
+              <div style={{ background: "#F7E7E5", color: C.redDeep, border: `1px solid #E9C3BE`, borderRadius: 8, padding: "9px 11px", fontSize: 13, marginBottom: 12, display: "flex", alignItems: "center", gap: 7 }}>
+                <AlertTriangle size={15} style={{ flexShrink: 0 }} /> {error}
+              </div>
+            )}
+            <div style={{ marginTop: 4 }}>
+              <Btn full tone="amber" size="lg" icon={LogIn} type="submit" disabled={busy} onClick={(e) => { e.preventDefault(); doLogin(username, password); }}>{busy ? "Signing in…" : "Log In"}</Btn>
+            </div>
+          </form>
+
+          <div style={{ marginTop: 18, paddingTop: 14, borderTop: `1px dashed ${C.line}` }}>
+            <div style={{ fontSize: 11.5, color: C.ink50, marginBottom: 8, fontFamily: FONT_SANS, fontWeight: 600 }}>DEMO ACCOUNTS</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {[
+                { u: "arslan", p: "guard123", label: "Security Guard — Arslan Ahmed" },
+                { u: "amir", p: "guard123", label: "Security Guard — Amir Hamja" },
+                { u: "shihabuddin", p: "manager123", label: "Manager / Admin — Mr Shihabuddin" },
+              ].map((d) => (
+                <button key={d.u} onClick={() => { setUsername(d.u); setPassword(d.p); doLogin(d.u, d.p); }}
+                  style={{ textAlign: "left", background: "#fff", border: `1px solid ${C.line}`, borderRadius: 8, padding: "8px 10px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontSize: 13, color: C.ink }}>{d.label}</span>
+                  <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.ink50 }}>{d.u}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ marginTop: 16, textAlign: "center" }}>
+            {!confirmingReset ? (
+              <button type="button" onClick={() => setConfirmingReset(true)} style={{ background: "none", border: "none", color: C.ink50, fontSize: 12, textDecoration: "underline", cursor: "pointer" }}>
+                Trouble logging in? Reset login accounts
+              </button>
+            ) : (
+              <div style={{ background: "#FCEFE0", border: `1px solid #F2D6A6`, borderRadius: 8, padding: "10px 12px", textAlign: "left" }}>
+                <div style={{ fontSize: 12.5, color: C.ink, marginBottom: 8 }}>
+                  This resets the shihabuddin/arslan/amir accounts back to their defaults (manager123 / guard123). Any employees or attendance you've already entered are kept.
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button type="button" onClick={() => setConfirmingReset(false)} style={{ flex: 1, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 6, padding: "6px 10px", fontSize: 12.5, cursor: "pointer" }}>Cancel</button>
+                  <button type="button" onClick={async () => { await onResetAccounts(); setConfirmingReset(false); setUsername("shihabuddin"); setPassword("manager123"); }} style={{ flex: 1, background: C.amberDeep, color: "#fff", border: "none", borderRadius: 6, padding: "6px 10px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>Reset Accounts</button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div style={{ marginTop: 10, textAlign: "center" }}>
+            {fbJustConnected ? (
+              <div style={{ background: "#EAF4EC", border: `1px solid #BFE0C9`, borderRadius: 8, padding: "10px 12px", textAlign: "left" }}>
+                <div style={{ fontSize: 12.5, color: C.greenDeep, marginBottom: 8 }}>Connected. Reload this page for it to take effect.</div>
+                <Btn full size="sm" tone="green" icon={RefreshCw} onClick={() => window.location.reload()}>Reload Now</Btn>
+              </div>
+            ) : !showFbConnect ? (
+              <button type="button" onClick={() => setShowFbConnect(true)} style={{ background: "none", border: "none", color: C.ink50, fontSize: 12, textDecoration: "underline", cursor: "pointer" }}>
+                {alreadyConnected ? "Change shared database connection" : "Guard or manager on a new phone? Connect to the shared database"}
+              </button>
+            ) : (
+              <div style={{ background: "#F3F6FA", border: `1px solid ${C.line}`, borderRadius: 8, padding: "12px", textAlign: "left" }}>
+                <div style={{ fontSize: 12.5, color: C.ink, marginBottom: 10, lineHeight: 1.5 }}>
+                  This connects <i>this device</i> to the same shared data everyone else uses. Ask your admin for the
+                  connection code — this is separate from your username and password.
+                </div>
+                <FirebaseConnectPanel onConnected={() => setFbJustConnected(true)} />
+                <button type="button" onClick={() => setShowFbConnect(false)} style={{ background: "none", border: "none", color: C.ink50, fontSize: 11.5, marginTop: 10, cursor: "pointer", textDecoration: "underline" }}>Cancel</button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------
+   DASHBOARD
+--------------------------------------------------------------------- */
+function Dashboard({ session, employees, attendance, settings, empById, today, goto, sendReport, leaves }) {
+  const todays = attendance.filter((a) => a.date === today);
+  const inside = todays.filter((a) => a.status === "INSIDE");
+  const checkedOutToday = todays.filter((a) => a.status === "CHECKED_OUT");
+  const activeEmployees = employees.filter((e) => e.active);
+  const checkedInIds = new Set(todays.map((a) => a.employee_id));
+  const onLeaveToday = activeEmployees.filter((e) => findLeave(leaves, e.id, today));
+  const onLeaveIds = new Set(onLeaveToday.map((e) => e.id));
+  const notCheckedIn = activeEmployees.filter((e) => !checkedInIds.has(e.id) && !onLeaveIds.has(e.id));
+  const shiftHours = settings.shift_hours || 9;
+  const overtimeToday = todays.filter((a) => {
+    if (a.status === "INSIDE") return elapsedMinutes(a.date, a.time_in) > shiftHours * 60;
+    return overtimeMinutes(a.total_minutes, shiftHours) > 0;
+  });
+  const rd = settings.report_delivery;
+  const due = session.role === "admin" && isReportDue(rd);
+
+  return (
+    <div>
+      <SectionTitle title="Today's Dashboard" sub={fmtDate(today)} />
+
+      {due && (
+        <div style={{ background: "#FCEFE0", border: `1px solid #F2D6A6`, borderRadius: 10, padding: "12px 14px", marginBottom: 18, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <AlertTriangle size={18} color={C.amberDeep} />
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 13.5, color: C.ink }}>
+                {rd.frequency[0].toUpperCase() + rd.frequency.slice(1)} report due to {rd.recipient_name || rd.recipient_email}
+              </div>
+              <div style={{ fontSize: 12, color: C.ink50 }}>Opens your email app with the report — you attach and send.</div>
+            </div>
+          </div>
+          <Btn size="sm" tone="amber" onClick={() => sendReport(rd.frequency)}>Send Report</Btn>
+        </div>
+      )}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 10, marginBottom: 22 }}>
+        <StatCard label="Total Employees" value={activeEmployees.length} icon={Users} tone="navy" />
+        <StatCard label="Checked In Today" value={todays.length} icon={DoorOpen} tone="green" />
+        <StatCard label="Currently Inside" value={inside.length} icon={Clock} tone="amber" />
+        <StatCard label="Checked Out Today" value={checkedOutToday.length} icon={DoorClosed} tone="slate" />
+        <StatCard label="Not Checked In" value={notCheckedIn.length} icon={XCircle} tone="red" />
+        <StatCard label="On Leave Today" value={onLeaveToday.length} icon={UserX} tone="slate" />
+        <StatCard label="In Overtime" value={overtimeToday.length} icon={AlertTriangle} tone="amber" />
+      </div>
+
+      <SectionTitle title="Currently Inside" sub={`${inside.length} on site`} />
+      <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, overflow: "hidden", marginBottom: 22 }}>
+        {inside.length === 0 ? <EmptyState icon={DoorOpen} title="No one is currently inside" /> : (
+          <TableScroll headers={["Employee", "ID", "Company", "Time In", "Duration"]}>
+            {inside.map((a) => {
+              const e = empById[a.employee_id]; if (!e) return null;
+              const mins = Math.round((Date.now() - new Date(`${a.date}T${a.time_in}`)) / 60000);
+              return (
+                <tr key={a.id}>
+                  <Td>{e.name}</Td>
+                  <TdMono>{e.employee_number}</TdMono>
+                  <Td>{e.company}</Td>
+                  <TdMono>{fmtTime(a.time_in)}</TdMono>
+                  <Td>{fmtDuration(mins)}</Td>
+                </tr>
+              );
+            })}
+          </TableScroll>
+        )}
+      </div>
+
+      <SectionTitle title="Today's Attendance" sub={`${todays.length} record(s)`} action={{ label: "View all", onClick: () => goto("attendance") }} />
+      <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, overflow: "hidden" }}>
+        {todays.length === 0 ? <EmptyState icon={ClipboardList} title="No attendance recorded yet today" /> : (
+          <TableScroll headers={["Employee", "Time In", "Time Out", "Total Hours", "Status", "Recorded By"]}>
+            {todays.slice(0, 8).map((a) => {
+              const e = empById[a.employee_id]; if (!e) return null;
+              return (
+                <tr key={a.id}>
+                  <Td>{e.name}</Td>
+                  <TdMono>{fmtTime(a.time_in)}</TdMono>
+                  <TdMono>{a.time_out ? fmtTime(a.time_out) : "—"}</TdMono>
+                  <Td>{a.total_minutes != null ? fmtDuration(a.total_minutes) : "—"}</Td>
+                  <Td><StatusBadge a={a} shiftHours={settings.shift_hours} /></Td>
+                  <Td>{a.status === "INSIDE" ? a.checked_in_by : a.checked_out_by}</Td>
+                </tr>
+              );
+            })}
+          </TableScroll>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StatusBadge({ a, shiftHours }) {
+  const sh = shiftHours || 9;
+  if (a.status === "INSIDE") {
+    const elapsed = elapsedMinutes(a.date, a.time_in);
+    return elapsed > sh * 60 ? <Badge tone="overtime">OVERTIME · INSIDE</Badge> : <Badge tone="inside">INSIDE</Badge>;
+  }
+  const ot = overtimeMinutes(a.total_minutes, sh);
+  return ot > 0 ? <Badge tone="overtime">+{fmtDuration(ot)} OT</Badge> : <Badge tone="out">CHECKED OUT</Badge>;
+}
+
+function SectionTitle({ title, sub, action }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 10, marginTop: 4 }}>
+      <div>
+        <h2 style={{ fontFamily: FONT_SERIF, fontSize: 19, color: C.ink, margin: 0 }}>{title}</h2>
+        {sub && <div style={{ fontSize: 12.5, color: C.ink50, marginTop: 2 }}>{sub}</div>}
+      </div>
+      {action && (
+        <button onClick={action.onClick} style={{ background: "none", border: "none", color: C.navy, fontFamily: FONT_SANS, fontWeight: 600, fontSize: 12.5, cursor: "pointer", display: "flex", alignItems: "center", gap: 2 }}>
+          {action.label} <ChevronRight size={14} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function TableScroll({ headers, children }) {
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 560 }}>
+        <thead>
+          <tr style={{ background: C.paperDim }}>
+            {headers.map((h) => (
+              <th key={h} style={{ textAlign: "left", padding: "9px 12px", fontSize: 11.5, fontFamily: FONT_SANS, fontWeight: 700, color: C.ink50, borderBottom: `1px solid ${C.line}` }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>{children}</tbody>
+      </table>
+    </div>
+  );
+}
+function Td({ children }) { return <td style={{ padding: "10px 12px", fontSize: 13.5, color: C.ink, borderBottom: `1px solid ${C.line}` }}>{children}</td>; }
+function TdMono({ children }) { return <td style={{ padding: "10px 12px", fontSize: 13, color: C.ink, fontFamily: FONT_MONO, borderBottom: `1px solid ${C.line}` }}>{children}</td>; }
+
+/* ---------------------------------------------------------------------
+   EMPLOYEE SEARCH (shared widget)
+--------------------------------------------------------------------- */
+function EmployeeSearch({ employees, placeholder, onPick, filterFn }) {
+  const [q, setQ] = useState("");
+  const results = useMemo(() => {
+    let pool = employees;
+    if (filterFn) pool = pool.filter(filterFn);
+    if (!q.trim()) return pool.slice(0, 6);
+    const term = q.toLowerCase();
+    return pool.filter((e) =>
+      e.name.toLowerCase().includes(term) ||
+      e.employee_number.toLowerCase().includes(term) ||
+      e.company.toLowerCase().includes(term) ||
+      e.department.toLowerCase().includes(term)
+    ).slice(0, 8);
+  }, [q, employees, filterFn]);
+
+  return (
+    <div>
+      <div style={{ position: "relative", marginBottom: 10 }}>
+        <Search size={17} style={{ position: "absolute", left: 12, top: 13, color: C.ink50 }} />
+        <input autoFocus style={{ ...inputStyle, paddingLeft: 38, fontSize: 16 }} placeholder={placeholder} value={q} onChange={(e) => setQ(e.target.value)} />
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {results.length === 0 && <EmptyState icon={Search} title="No matching employees" sub="Try a different name, ID, or company" />}
+        {results.map((e) => (
+          <button key={e.id} onClick={() => onPick(e)} style={{
+            textAlign: "left", background: "#fff", border: `1px solid ${C.line}`, borderRadius: 9, padding: "11px 13px",
+            cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center",
+          }}>
+            <div>
+              <div style={{ fontSize: 14.5, fontWeight: 600, color: C.ink }}>{e.name}</div>
+              <div style={{ fontSize: 12, color: C.ink50, marginTop: 2 }}>{e.company} · {e.department}</div>
+            </div>
+            <span style={{ fontFamily: FONT_MONO, fontSize: 12, color: C.navy, background: C.paperDim, padding: "3px 7px", borderRadius: 5 }}>{e.employee_number}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------
+   CHECK-IN
+--------------------------------------------------------------------- */
+function CheckInScreen({ session, employees, attendance, settings, leaves, persistAttendance, audit, persistAudit, notify, today }) {
+  const [selected, setSelected] = useState(null);
+  const [remarks, setRemarks] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [success, setSuccess] = useState(null);
+  const [backdate, setBackdate] = useState(false);
+  const [customTime, setCustomTime] = useState(nowTimeStr().slice(0, 5));
+
+  const insideIds = useMemo(() => new Set(attendance.filter((a) => a.status === "INSIDE").map((a) => a.employee_id)), [attendance]);
+  const alreadyInside = selected && insideIds.has(selected.id);
+  const onLeave = selected && findLeave(leaves, selected.id, today);
+
+  const pickEmployee = (e) => { setSelected(e); setBackdate(false); setCustomTime(nowTimeStr().slice(0, 5)); };
+
+  const doCheckIn = async () => {
+    if (!selected || submitting) return;
+    if (!selected.active) { notify("This employee is inactive and cannot be checked in", "error"); return; }
+    if (insideIds.has(selected.id)) { notify("Already inside — check out first", "error"); return; }
+    const now = new Date();
+    let time_in = nowTimeStr(now);
+    if (backdate) {
+      if (!customTime) { notify("Enter a valid time", "error"); return; }
+      if (`${customTime}:00` > nowTimeStr(now)) { notify("Check-in time can't be in the future", "error"); return; }
+      time_in = `${customTime}:00`;
+    }
+    setSubmitting(true);
+    const record = {
+      id: uid("a_"), employee_id: selected.id, date: todayStr(now), time_in, time_out: null, total_minutes: null,
+      status: "INSIDE", checked_in_by: session.name, checked_out_by: null,
+      remarks_in: remarks || "", remarks_out: "",
+      created_at: Date.now(), updated_at: Date.now(),
+    };
+    await persistAttendance([record, ...attendance]);
+    await persistAudit([{ id: uid("log_"), attendance_id: record.id, action: "CHECK_IN", old_value: null, new_value: `IN ${time_in}`, performed_by: session.name, reason: "", timestamp: Date.now() }, ...audit]);
+    setSubmitting(false);
+    setSuccess({ ...record, employee: selected });
+    setSelected(null); setRemarks(""); setBackdate(false);
+    notify(`${selected.name} checked in`);
+  };
+
+  if (success) {
+    return (
+      <div>
+        <SectionTitle title="Check In" />
+        <div style={{ background: "#fff", border: `2px solid ${C.green}`, borderRadius: 12, padding: 24, textAlign: "center" }}>
+          <CheckCircle2 size={44} color={C.green} style={{ marginBottom: 10 }} />
+          <div style={{ fontFamily: FONT_SERIF, fontSize: 21, color: C.ink, marginBottom: 4 }}>Check-In Successful</div>
+          <div style={{ display: "grid", gridTemplateColumns: "auto auto", gap: "6px 18px", justifyContent: "center", marginTop: 14, textAlign: "left" }}>
+            <span style={{ color: C.ink50, fontSize: 13 }}>Employee</span><span style={{ fontWeight: 600 }}>{success.employee.name}</span>
+            <span style={{ color: C.ink50, fontSize: 13 }}>Employee No.</span><span style={{ fontFamily: FONT_MONO }}>{success.employee.employee_number}</span>
+            <span style={{ color: C.ink50, fontSize: 13 }}>Date</span><span>{fmtDate(success.date)}</span>
+            <span style={{ color: C.ink50, fontSize: 13 }}>Time</span><span style={{ fontFamily: FONT_MONO }}>{fmtTime(success.time_in)}</span>
+          </div>
+          <div style={{ marginTop: 20 }}>
+            <Btn tone="navy" onClick={() => setSuccess(null)} icon={DoorOpen}>Check In Another Employee</Btn>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <SectionTitle title="Check In" sub="Search, confirm, and record arrival — no manual time entry" />
+      {!selected ? (
+        <EmployeeSearch employees={employees} placeholder="Search name or employee number…" onPick={pickEmployee} />
+      ) : (
+        <div>
+          <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, padding: 18, marginBottom: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div>
+                <div style={{ fontFamily: FONT_SERIF, fontSize: 20, color: C.ink }}>{selected.name}</div>
+                <div style={{ fontFamily: FONT_MONO, fontSize: 12.5, color: C.navy, marginTop: 2 }}>{selected.employee_number}</div>
+              </div>
+              <button onClick={() => setSelected(null)} style={{ background: "none", border: "none", color: C.ink50, cursor: "pointer" }}><X size={19} /></button>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 14, fontSize: 13.5 }}>
+              <InfoRow icon={Building2} label="Company" value={selected.company} />
+              <InfoRow icon={Briefcase} label="Department" value={selected.department} />
+              <InfoRow icon={UserCog} label="Designation" value={selected.designation} />
+              <InfoRow icon={Phone} label="Phone" value={selected.phone || "—"} />
+            </div>
+            {!selected.active && (
+              <div style={{ marginTop: 12, background: "#F7E7E5", color: C.redDeep, padding: "8px 10px", borderRadius: 7, fontSize: 13, display: "flex", gap: 6, alignItems: "center" }}>
+                <AlertTriangle size={15} /> Employee is inactive — check-in blocked.
+              </div>
+            )}
+            {alreadyInside && (
+              <div style={{ marginTop: 12, background: "#FCEFE0", color: C.amberDeep, padding: "8px 10px", borderRadius: 7, fontSize: 13, display: "flex", gap: 6, alignItems: "center" }}>
+                <Clock size={15} /> Already Inside — must check out before checking in again.
+              </div>
+            )}
+            {onLeave && (
+              <div style={{ marginTop: 12, background: "#F7E7E5", color: C.redDeep, padding: "8px 10px", borderRadius: 7, fontSize: 13, display: "flex", gap: 6, alignItems: "center" }}>
+                <UserX size={15} /> Marked on {onLeave.type} today{onLeave.reason ? ` (${onLeave.reason})` : ""} — you can still check them in if they came anyway.
+              </div>
+            )}
+          </div>
+
+          <BackdateField label="Arrived earlier? Set actual check-in time" active={backdate}
+            onToggle={() => { setBackdate((b) => !b); setCustomTime(nowTimeStr().slice(0, 5)); }}
+            time={customTime} onTimeChange={setCustomTime} />
+
+          <Field label="Remarks (optional)">
+            <RemarksPicker value={remarks} onChange={setRemarks} />
+          </Field>
+
+          <Btn full tone="green" size="lg" icon={DoorOpen} onClick={doCheckIn} disabled={submitting || alreadyInside || !selected.active}>
+            {submitting ? "Recording…" : "CHECK IN"}
+          </Btn>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InfoRow({ icon: Icon, label, value }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <Icon size={14} color={C.ink50} />
+      <div>
+        <div style={{ fontSize: 10.5, color: C.ink50 }}>{label}</div>
+        <div style={{ fontSize: 13.5, color: C.ink, fontWeight: 500 }}>{value}</div>
+      </div>
+    </div>
+  );
+}
+
+const REMARK_OPTIONS = ["Official duty", "Temporary visitor", "Forgot ID", "Late arrival", "Emergency", "Other"];
+function RemarksPicker({ value, onChange }) {
+  const [custom, setCustom] = useState(!REMARK_OPTIONS.includes(value) && !!value);
+  return (
+    <div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: custom ? 8 : 0 }}>
+        {REMARK_OPTIONS.map((r) => (
+          <button key={r} type="button" onClick={() => { onChange(r === value ? "" : r); setCustom(false); }} style={{
+            padding: "6px 11px", borderRadius: 20, fontSize: 12.5, cursor: "pointer",
+            border: `1px solid ${value === r ? C.navy : C.line}`, background: value === r ? C.navy : "#fff", color: value === r ? "#fff" : C.ink,
+          }}>{r}</button>
+        ))}
+        <button type="button" onClick={() => setCustom((c) => !c)} style={{
+          padding: "6px 11px", borderRadius: 20, fontSize: 12.5, cursor: "pointer",
+          border: `1px dashed ${C.ink50}`, background: "#fff", color: C.ink50,
+        }}>+ Custom</button>
+      </div>
+      {custom && <input style={inputStyle} placeholder="Type a remark…" value={value} onChange={(e) => onChange(e.target.value)} />}
+    </div>
+  );
+}
+
+function BackdateField({ label, active, onToggle, time, onTimeChange }) {
+  if (!active) {
+    return (
+      <button type="button" onClick={onToggle} style={{
+        background: "none", border: "none", color: C.navy, fontSize: 12.5, fontWeight: 600,
+        cursor: "pointer", textDecoration: "underline", padding: 0, marginBottom: 14, display: "block",
+      }}>
+        {label}
+      </button>
+    );
+  }
+  return (
+    <div style={{ background: "#FCEFE0", border: `1px solid #F2D6A6`, borderRadius: 9, padding: "12px 14px", marginBottom: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 9 }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: C.amberDeep, letterSpacing: 0.3 }}>SET ACTUAL TIME</span>
+        <button type="button" onClick={onToggle} style={{ background: "none", border: "none", color: C.ink50, cursor: "pointer", fontSize: 12 }}>Use current time</button>
+      </div>
+      <div style={{ display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap" }}>
+        <input type="time" style={{ ...inputStyle, maxWidth: 130, background: "#fff" }} value={time} onChange={(e) => onTimeChange(e.target.value)} />
+        {[5, 15, 30, 60].map((m) => (
+          <button key={m} type="button" onClick={() => onTimeChange(shiftTimeStr(time, -m))} style={{
+            padding: "6px 10px", borderRadius: 16, fontSize: 12, border: `1px solid ${C.amberDeep}`, background: "#fff", color: C.amberDeep, cursor: "pointer",
+          }}>-{m < 60 ? `${m}m` : "1h"}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------
+   CHECK-OUT
+--------------------------------------------------------------------- */
+function CheckOutScreen({ session, employees, attendance, settings, persistAttendance, audit, persistAudit, notify, today }) {
+  const [selected, setSelected] = useState(null); // employee
+  const [remarks, setRemarks] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [success, setSuccess] = useState(null);
+  const [backdate, setBackdate] = useState(false);
+  const [customTime, setCustomTime] = useState(nowTimeStr().slice(0, 5));
+
+  const insideRecords = useMemo(() => attendance.filter((a) => a.status === "INSIDE"), [attendance]);
+  const insideIds = useMemo(() => new Set(insideRecords.map((a) => a.employee_id)), [insideRecords]);
+  const activeRecord = selected ? insideRecords.find((a) => a.employee_id === selected.id) : null;
+
+  const pickEmployee = (e) => { setSelected(e); setBackdate(false); setCustomTime(nowTimeStr().slice(0, 5)); };
+
+  const doCheckOut = async () => {
+    if (!activeRecord || submitting) return;
+    const now = new Date();
+    let time_out = nowTimeStr(now);
+    if (backdate) {
+      if (!customTime) { notify("Enter a valid time", "error"); return; }
+      if (`${customTime}:00` > nowTimeStr(now)) { notify("Check-out time can't be in the future", "error"); return; }
+      if (`${customTime}:00` <= activeRecord.time_in) { notify(`Check-out time must be after the check-in time (${fmtTime(activeRecord.time_in)})`, "error"); return; }
+      time_out = `${customTime}:00`;
+    }
+    setSubmitting(true);
+    const total_minutes = minutesBetween(activeRecord.date, activeRecord.time_in, time_out);
+    const updated = { ...activeRecord, time_out, total_minutes, status: "CHECKED_OUT", checked_out_by: session.name, remarks_out: remarks || "", updated_at: Date.now() };
+    const next = attendance.map((a) => (a.id === activeRecord.id ? updated : a));
+    await persistAttendance(next);
+    await persistAudit([{ id: uid("log_"), attendance_id: activeRecord.id, action: "CHECK_OUT", old_value: null, new_value: `OUT ${time_out}`, performed_by: session.name, reason: "", timestamp: Date.now() }, ...audit]);
+    setSubmitting(false);
+    setSuccess({ ...updated, employee: selected });
+    setSelected(null); setRemarks(""); setBackdate(false);
+    notify(`${selected.name} checked out`);
+  };
+
+  if (success) {
+    return (
+      <div>
+        <SectionTitle title="Check Out" />
+        <div style={{ background: "#fff", border: `2px solid ${C.red}`, borderRadius: 12, padding: 24, textAlign: "center" }}>
+          <CheckCircle2 size={44} color={C.red} style={{ marginBottom: 10 }} />
+          <div style={{ fontFamily: FONT_SERIF, fontSize: 21, color: C.ink, marginBottom: 4 }}>Check-Out Successful</div>
+          {overtimeMinutes(success.total_minutes, settings.shift_hours || 9) > 0 && (
+            <div style={{ marginBottom: 8 }}><Badge tone="overtime">+{fmtDuration(overtimeMinutes(success.total_minutes, settings.shift_hours || 9))} OVERTIME</Badge></div>
+          )}
+          <div style={{ display: "grid", gridTemplateColumns: "auto auto", gap: "6px 18px", justifyContent: "center", marginTop: 14, textAlign: "left" }}>
+            <span style={{ color: C.ink50, fontSize: 13 }}>Employee</span><span style={{ fontWeight: 600 }}>{success.employee.name}</span>
+            <span style={{ color: C.ink50, fontSize: 13 }}>Time In</span><span style={{ fontFamily: FONT_MONO }}>{fmtTime(success.time_in)}</span>
+            <span style={{ color: C.ink50, fontSize: 13 }}>Time Out</span><span style={{ fontFamily: FONT_MONO }}>{fmtTime(success.time_out)}</span>
+            <span style={{ color: C.ink50, fontSize: 13 }}>Total Time Inside</span><span style={{ fontWeight: 600 }}>{fmtDuration(success.total_minutes)}</span>
+          </div>
+          <div style={{ marginTop: 20 }}>
+            <Btn tone="navy" onClick={() => setSuccess(null)} icon={DoorClosed}>Check Out Another Employee</Btn>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <SectionTitle title="Check Out" sub="Only employees currently inside can be checked out" />
+      {!selected ? (
+        <EmployeeSearch employees={employees} placeholder="Search employee currently inside…" onPick={pickEmployee} filterFn={(e) => insideIds.has(e.id)} />
+      ) : !activeRecord ? (
+        <div>
+          <div style={{ background: "#F7E7E5", color: C.redDeep, padding: "12px 14px", borderRadius: 9, fontSize: 13.5, display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
+            <AlertTriangle size={16} /> {selected.name} has no active check-in — cannot check out.
+          </div>
+          <Btn tone="ghost" onClick={() => setSelected(null)}>Search again</Btn>
+        </div>
+      ) : (
+        <div>
+          <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, padding: 18, marginBottom: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div>
+                <div style={{ fontFamily: FONT_SERIF, fontSize: 20, color: C.ink }}>{selected.name}</div>
+                <div style={{ fontFamily: FONT_MONO, fontSize: 12.5, color: C.navy, marginTop: 2 }}>{selected.employee_number}</div>
+              </div>
+              <button onClick={() => setSelected(null)} style={{ background: "none", border: "none", color: C.ink50, cursor: "pointer" }}><X size={19} /></button>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 14, fontSize: 13.5 }}>
+              <InfoRow icon={CalendarDays} label="Check-in Date" value={fmtDate(activeRecord.date)} />
+              <InfoRow icon={Clock} label="Check-in Time" value={fmtTime(activeRecord.time_in)} />
+            </div>
+          </div>
+
+          <BackdateField label="Already left? Set actual check-out time" active={backdate}
+            onToggle={() => { setBackdate((b) => !b); setCustomTime(nowTimeStr().slice(0, 5)); }}
+            time={customTime} onTimeChange={setCustomTime} />
+
+          <Field label="Remarks (optional)">
+            <RemarksPicker value={remarks} onChange={setRemarks} />
+          </Field>
+
+          <Btn full tone="red" size="lg" icon={DoorClosed} onClick={doCheckOut} disabled={submitting}>
+            {submitting ? "Recording…" : "CHECK OUT"}
+          </Btn>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------
+   TODAY'S ATTENDANCE (full list)
+--------------------------------------------------------------------- */
+function AttendanceToday({ employees, attendance, empById, today, settings, leaves }) {
+  const [tab, setTab] = useState("inside");
+  const todays = attendance.filter((a) => a.date === today);
+  const inside = todays.filter((a) => a.status === "INSIDE");
+  const notCheckedIn = employees.filter((e) => e.active && !todays.some((a) => a.employee_id === e.id));
+
+  return (
+    <div>
+      <SectionTitle title="Today's Attendance" sub={fmtDate(today)} />
+      <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+        {[["inside", `Inside (${inside.length})`], ["all", `All (${todays.length})`], ["missing", `Not Checked In (${notCheckedIn.length})`]].map(([k, label]) => (
+          <button key={k} onClick={() => setTab(k)} style={{
+            padding: "7px 12px", borderRadius: 20, fontSize: 12.5, fontWeight: 600, cursor: "pointer",
+            border: `1px solid ${tab === k ? C.navy : C.line}`, background: tab === k ? C.navy : "#fff", color: tab === k ? "#fff" : C.ink,
+          }}>{label}</button>
+        ))}
+      </div>
+
+      <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, overflow: "hidden" }}>
+        {tab === "missing" ? (
+          notCheckedIn.length === 0 ? <EmptyState icon={CheckCircle2} title="Everyone active has checked in today" /> : (
+            <TableScroll headers={["Employee", "ID", "Company", "Department", "Status"]}>
+              {notCheckedIn.map((e) => {
+                const lv = findLeave(leaves, e.id, today);
+                return (
+                  <tr key={e.id}>
+                    <Td>{e.name}</Td><TdMono>{e.employee_number}</TdMono><Td>{e.company}</Td><Td>{e.department}</Td>
+                    <Td>{lv ? <Badge tone={lv.type === "Sick Leave" || lv.type === "Absent" ? "missing" : "neutral"}>{lv.type.toUpperCase()}</Badge> : <Badge tone="missing">NOT CHECKED IN</Badge>}</Td>
+                  </tr>
+                );
+              })}
+            </TableScroll>
+          )
+        ) : (
+          (tab === "inside" ? inside : todays).length === 0 ? <EmptyState icon={ClipboardList} title="No records to show" /> : (
+            <TableScroll headers={["Employee", "ID", "Time In", "Time Out", "Total Hours", "Status", "Recorded By"]}>
+              {(tab === "inside" ? inside : todays).map((a) => {
+                const e = empById[a.employee_id]; if (!e) return null;
+                return (
+                  <tr key={a.id}>
+                    <Td>{e.name}</Td>
+                    <TdMono>{e.employee_number}</TdMono>
+                    <TdMono>{fmtTime(a.time_in)}</TdMono>
+                    <TdMono>{a.time_out ? fmtTime(a.time_out) : "—"}</TdMono>
+                    <Td>{a.total_minutes != null ? fmtDuration(a.total_minutes) : "—"}</Td>
+                    <Td><StatusBadge a={a} shiftHours={settings.shift_hours} /></Td>
+                    <Td>{a.status === "INSIDE" ? a.checked_in_by : a.checked_out_by}</Td>
+                  </tr>
+                );
+              })}
+            </TableScroll>
+          )
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------
+   HISTORY
+--------------------------------------------------------------------- */
+function HistoryScreen({ employees, attendance, empById, session, persistAttendance, audit, persistAudit, notify, settings }) {
+  const [filters, setFilters] = useState({ dateFrom: "", dateTo: "", employee: "", company: "", department: "", guard: "", status: "" });
+  const [sortBy, setSortBy] = useState("latest");
+  const [editing, setEditing] = useState(null);
+
+  const companies = useMemo(() => [...new Set(employees.map((e) => e.company))], [employees]);
+  const departments = useMemo(() => [...new Set(employees.map((e) => e.department))], [employees]);
+  const guards = useMemo(() => [...new Set(attendance.flatMap((a) => [a.checked_in_by, a.checked_out_by]).filter(Boolean))], [attendance]);
+
+  const filtered = useMemo(() => {
+    let rows = attendance.map((a) => ({ ...a, emp: empById[a.employee_id] })).filter((r) => r.emp);
+    if (filters.dateFrom) rows = rows.filter((r) => r.date >= filters.dateFrom);
+    if (filters.dateTo) rows = rows.filter((r) => r.date <= filters.dateTo);
+    if (filters.employee) {
+      const t = filters.employee.toLowerCase();
+      rows = rows.filter((r) => r.emp.name.toLowerCase().includes(t) || r.emp.employee_number.toLowerCase().includes(t));
+    }
+    if (filters.company) rows = rows.filter((r) => r.emp.company === filters.company);
+    if (filters.department) rows = rows.filter((r) => r.emp.department === filters.department);
+    if (filters.guard) rows = rows.filter((r) => r.checked_in_by === filters.guard || r.checked_out_by === filters.guard);
+    if (filters.status) {
+      const shiftHours = settings.shift_hours || 9;
+      rows = rows.filter((r) => {
+        if (filters.status === "OVERTIME") {
+          return r.status === "INSIDE" ? elapsedMinutes(r.date, r.time_in) > shiftHours * 60 : overtimeMinutes(r.total_minutes, shiftHours) > 0;
+        }
+        return r.status === filters.status;
+      });
+    }
+    rows.sort((a, b) => {
+      if (sortBy === "latest") return (b.date + b.time_in).localeCompare(a.date + a.time_in);
+      if (sortBy === "earliest") return (a.date + a.time_in).localeCompare(b.date + b.time_in);
+      if (sortBy === "name") return a.emp.name.localeCompare(b.emp.name);
+      if (sortBy === "timein") return a.time_in.localeCompare(b.time_in);
+      return 0;
+    });
+    return rows;
+  }, [attendance, filters, sortBy, empById]);
+
+  const exportCSV = () => {
+    const shiftHours = settings.shift_hours || 9;
+    const headers = [
+      { label: "Date", get: (r) => r.date }, { label: "Employee", get: (r) => r.emp.name },
+      { label: "Employee ID", get: (r) => r.emp.employee_number }, { label: "Company", get: (r) => r.emp.company },
+      { label: "Department", get: (r) => r.emp.department }, { label: "Time In", get: (r) => r.time_in },
+      { label: "Time Out", get: (r) => r.time_out || "" }, { label: "Total Hours", get: (r) => r.total_minutes != null ? fmtDuration(r.total_minutes) : "" },
+      { label: "Overtime", get: (r) => fmtDuration(overtimeMinutes(r.total_minutes, shiftHours)) },
+      { label: "Status", get: (r) => r.status }, { label: "Recorded By", get: (r) => r.status === "INSIDE" ? r.checked_in_by : r.checked_out_by },
+      { label: "Remarks", get: (r) => [r.remarks_in, r.remarks_out].filter(Boolean).join(" / ") },
+    ];
+    downloadFile(`attendance-history-${todayStr()}.csv`, toCSV(filtered, headers), "text/csv");
+  };
+
+  return (
+    <div>
+      <SectionTitle title="Attendance History" sub={`${filtered.length} record(s)`} />
+
+      <details style={{ marginBottom: 14, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, padding: "10px 14px" }}>
+        <summary style={{ cursor: "pointer", fontWeight: 600, fontSize: 13.5, color: C.navy }}>Filters &amp; Sort</summary>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 12 }}>
+          <Field label="From"><input type="date" style={inputStyle} value={filters.dateFrom} onChange={(e) => setFilters((f) => ({ ...f, dateFrom: e.target.value }))} /></Field>
+          <Field label="To"><input type="date" style={inputStyle} value={filters.dateTo} onChange={(e) => setFilters((f) => ({ ...f, dateTo: e.target.value }))} /></Field>
+          <Field label="Employee (name/ID)"><input style={inputStyle} value={filters.employee} onChange={(e) => setFilters((f) => ({ ...f, employee: e.target.value }))} /></Field>
+          <Field label="Guard">
+            <select style={inputStyle} value={filters.guard} onChange={(e) => setFilters((f) => ({ ...f, guard: e.target.value }))}>
+              <option value="">All</option>{guards.map((g) => <option key={g} value={g}>{g}</option>)}
+            </select>
+          </Field>
+          <Field label="Company">
+            <select style={inputStyle} value={filters.company} onChange={(e) => setFilters((f) => ({ ...f, company: e.target.value }))}>
+              <option value="">All</option>{companies.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </Field>
+          <Field label="Department">
+            <select style={inputStyle} value={filters.department} onChange={(e) => setFilters((f) => ({ ...f, department: e.target.value }))}>
+              <option value="">All</option>{departments.map((d) => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </Field>
+          <Field label="Status">
+            <select style={inputStyle} value={filters.status} onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}>
+              <option value="">All</option><option value="INSIDE">Inside</option><option value="CHECKED_OUT">Checked Out</option><option value="OVERTIME">Overtime</option>
+            </select>
+          </Field>
+          <Field label="Sort by">
+            <select style={inputStyle} value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+              <option value="latest">Latest first</option><option value="earliest">Earliest first</option>
+              <option value="name">Employee name</option><option value="timein">Time in</option>
+            </select>
+          </Field>
+        </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+          <Btn size="sm" tone="ghost" onClick={() => setFilters({ dateFrom: "", dateTo: "", employee: "", company: "", department: "", guard: "", status: "" })}>Clear filters</Btn>
+          <Btn size="sm" tone="paper" icon={Download} onClick={exportCSV}>Export CSV</Btn>
+        </div>
+      </details>
+
+      <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, overflow: "hidden" }}>
+        {filtered.length === 0 ? <EmptyState icon={CalendarDays} title="No records match these filters" /> : (
+          <TableScroll headers={["Date", "Employee", "ID", "Company", "Time In", "Time Out", "Total Hours", "Status", "Recorded By", "Remarks", ""]}>
+            {filtered.slice(0, 200).map((r) => (
+              <tr key={r.id}>
+                <Td>{r.date}</Td><Td>{r.emp.name}</Td><TdMono>{r.emp.employee_number}</TdMono><Td>{r.emp.company}</Td>
+                <TdMono>{fmtTime(r.time_in)}</TdMono><TdMono>{r.time_out ? fmtTime(r.time_out) : "—"}</TdMono>
+                <Td>{r.total_minutes != null ? fmtDuration(r.total_minutes) : "—"}</Td>
+                <Td><StatusBadge a={r} shiftHours={settings.shift_hours} /></Td>
+                <Td>{r.status === "INSIDE" ? r.checked_in_by : r.checked_out_by}</Td>
+                <Td>{[r.remarks_in, r.remarks_out].filter(Boolean).join(" / ") || "—"}</Td>
+                <Td>{session.role === "admin" && (
+                  <button onClick={() => setEditing(r)} style={{ background: "none", border: "none", color: C.navy, cursor: "pointer" }} title="Correct record"><Edit3 size={15} /></button>
+                )}</Td>
+              </tr>
+            ))}
+          </TableScroll>
+        )}
+      </div>
+
+      {editing && (
+        <CorrectionModal record={editing} onClose={() => setEditing(null)} attendance={attendance}
+          persistAttendance={persistAttendance} audit={audit} persistAudit={persistAudit} session={session} notify={notify} />
+      )}
+    </div>
+  );
+}
+
+function CorrectionModal({ record, onClose, attendance, persistAttendance, audit, persistAudit, session, notify }) {
+  const [timeIn, setTimeIn] = useState(record.time_in || "");
+  const [timeOut, setTimeOut] = useState(record.time_out || "");
+  const [reason, setReason] = useState("");
+
+  const save = async () => {
+    if (!reason.trim()) { notify("A reason is required to correct a record", "error"); return; }
+    const total_minutes = timeOut ? minutesBetween(record.date, timeIn, timeOut) : null;
+    const updated = { ...record, time_in: timeIn, time_out: timeOut || null, total_minutes, status: timeOut ? "CHECKED_OUT" : "INSIDE", updated_at: Date.now() };
+    delete updated.emp;
+    const next = attendance.map((a) => (a.id === record.id ? updated : a));
+    await persistAttendance(next);
+    const logs = [];
+    if (timeIn !== record.time_in) logs.push({ id: uid("log_"), attendance_id: record.id, action: "CORRECTION", old_value: `time_in=${record.time_in}`, new_value: `time_in=${timeIn}`, performed_by: session.name, reason, timestamp: Date.now() });
+    if ((timeOut || null) !== record.time_out) logs.push({ id: uid("log_"), attendance_id: record.id, action: "CORRECTION", old_value: `time_out=${record.time_out || "—"}`, new_value: `time_out=${timeOut || "—"}`, performed_by: session.name, reason, timestamp: Date.now() });
+    if (logs.length) await persistAudit([...logs, ...audit]);
+    notify("Attendance record corrected");
+    onClose();
+  };
+
+  return (
+    <Modal title="Correct Attendance Record" onClose={onClose}>
+      <div style={{ fontSize: 13, color: C.ink50, marginBottom: 12 }}>{record.emp?.name} · {record.date}</div>
+      <Field label="Time In"><input type="time" step="1" style={inputStyle} value={timeIn} onChange={(e) => setTimeIn(e.target.value)} /></Field>
+      <Field label="Time Out (leave blank if still inside)"><input type="time" step="1" style={inputStyle} value={timeOut} onChange={(e) => setTimeOut(e.target.value)} /></Field>
+      <Field label="Reason for correction (required)"><textarea style={{ ...inputStyle, minHeight: 70 }} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Guard entered wrong time, correcting per CCTV footage" /></Field>
+      <div style={{ background: C.paperDim, borderRadius: 8, padding: "8px 10px", fontSize: 12, color: C.ink50, marginBottom: 14 }}>
+        Original: time_in {record.time_in}, time_out {record.time_out || "—"} — this change will be logged in the audit trail, not silently overwritten.
+      </div>
+      <Btn full tone="navy" onClick={save}>Save Correction</Btn>
+    </Modal>
+  );
+}
+
+/* ---------------------------------------------------------------------
+   LEAVE & ABSENCES
+   Mark an employee as on annual leave, sick leave, or otherwise absent for
+   a date (or date range) so the gate and the dashboard show why they
+   haven't checked in, instead of leaving it blank.
+--------------------------------------------------------------------- */
+const LEAVE_TYPES = ["Annual Leave", "Sick Leave", "Absent", "Other"];
+
+function LeaveScreen({ session, employees, empById, leaves, persistLeaves, notify }) {
+  const [showForm, setShowForm] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const today = todayStr();
+
+  const sorted = useMemo(() => [...leaves].sort((a, b) => b.date_from.localeCompare(a.date_from)), [leaves]);
+  const current = sorted.filter((l) => l.date_to >= today);
+  const past = sorted.filter((l) => l.date_to < today);
+
+  const addLeave = async (data) => {
+    const rec = { id: uid("lv_"), ...data, recorded_by: session.name, created_at: Date.now() };
+    await persistLeaves([rec, ...leaves]);
+    notify("Leave recorded");
+    setShowForm(false);
+  };
+
+  const removeLeave = async (id) => {
+    await persistLeaves(leaves.filter((l) => l.id !== id));
+    notify("Leave entry removed");
+    setConfirmDelete(null);
+  };
+
+  const LeaveRow = ({ l, removable }) => {
+    const e = empById[l.employee_id];
+    if (!e) return null;
+    const range = l.date_from === l.date_to ? fmtDate(l.date_from) : `${fmtDate(l.date_from)} – ${fmtDate(l.date_to)}`;
+    return (
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "11px 14px", borderBottom: `1px solid ${C.line}` }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontWeight: 600, fontSize: 14 }}>{e.name}</span>
+            <Badge tone={l.type === "Sick Leave" || l.type === "Absent" ? "missing" : "neutral"}>{l.type.toUpperCase()}</Badge>
+          </div>
+          <div style={{ fontSize: 12, color: C.ink50, marginTop: 2 }}>
+            {range}{l.reason ? ` — ${l.reason}` : ""} · recorded by {l.recorded_by}
+          </div>
+        </div>
+        {removable && session.role === "admin" && (
+          <button onClick={() => setConfirmDelete(l)} style={{ background: "none", border: "none", color: C.redDeep, cursor: "pointer", flexShrink: 0 }}><Trash2 size={15} /></button>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div>
+      <SectionTitle title="Leave & Absences" sub={`${current.length} current or upcoming`} action={{ label: "+ Mark Leave", onClick: () => setShowForm(true) }} />
+
+      <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, overflow: "hidden", marginBottom: 20 }}>
+        {current.length === 0 ? <EmptyState icon={UserX} title="No one is currently marked on leave" /> : current.map((l) => <LeaveRow key={l.id} l={l} removable />)}
+      </div>
+
+      {past.length > 0 && (
+        <>
+          <SectionTitle title="Past Leave" />
+          <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, overflow: "hidden" }}>
+            {past.slice(0, 30).map((l) => <LeaveRow key={l.id} l={l} removable />)}
+          </div>
+        </>
+      )}
+
+      {showForm && <LeaveForm employees={employees} onClose={() => setShowForm(false)} onSave={addLeave} />}
+
+      {confirmDelete && (
+        <Modal title="Remove Leave Entry" onClose={() => setConfirmDelete(null)}>
+          <p style={{ fontSize: 14, color: C.ink, lineHeight: 1.5 }}>
+            Remove this leave entry for <b>{empById[confirmDelete.employee_id]?.name}</b>?
+          </p>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn tone="ghost" onClick={() => setConfirmDelete(null)}>Cancel</Btn>
+            <Btn tone="red" onClick={() => removeLeave(confirmDelete.id)}>Remove</Btn>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function LeaveForm({ employees, onClose, onSave }) {
+  const [selected, setSelected] = useState(null);
+  const [type, setType] = useState("Annual Leave");
+  const [dateFrom, setDateFrom] = useState(todayStr());
+  const [dateTo, setDateTo] = useState(todayStr());
+  const [reason, setReason] = useState("");
+
+  const save = () => {
+    if (!selected) return;
+    if (dateTo < dateFrom) return;
+    onSave({ employee_id: selected.id, type, date_from: dateFrom, date_to: dateTo, reason: reason || "" });
+  };
+
+  return (
+    <Modal title="Mark Employee on Leave" onClose={onClose}>
+      {!selected ? (
+        <EmployeeSearch employees={employees} placeholder="Search name or employee number…" onPick={setSelected} />
+      ) : (
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+            <div>
+              <div style={{ fontFamily: FONT_SERIF, fontSize: 17, color: C.ink }}>{selected.name}</div>
+              <div style={{ fontFamily: FONT_MONO, fontSize: 12, color: C.navy }}>{selected.employee_number}</div>
+            </div>
+            <button onClick={() => setSelected(null)} style={{ background: "none", border: "none", color: C.ink50, cursor: "pointer" }}><X size={18} /></button>
+          </div>
+          <Field label="Type">
+            <select style={inputStyle} value={type} onChange={(e) => setType(e.target.value)}>
+              {LEAVE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </Field>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <Field label="From"><input type="date" style={inputStyle} value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} /></Field>
+            <Field label="To"><input type="date" style={inputStyle} value={dateTo} onChange={(e) => setDateTo(e.target.value)} /></Field>
+          </div>
+          {dateTo < dateFrom && <div style={{ fontSize: 12.5, color: C.redDeep, marginBottom: 10 }}>"To" date can't be before "From" date.</div>}
+          <Field label="Reason / note (optional)"><input style={inputStyle} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. family emergency, doctor's note" /></Field>
+          <Btn full tone="navy" onClick={save} disabled={dateTo < dateFrom}>Save</Btn>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+/* ---------------------------------------------------------------------
+   EMPLOYEES (admin)
+--------------------------------------------------------------------- */
+function EmployeesScreen({ employees, persistEmployees, notify }) {
+  const [q, setQ] = useState("");
+  const [statusFilter, setStatusFilter] = useState("active");
+  const [editing, setEditing] = useState(null); // employee or {} for new
+  const [confirmDeactivate, setConfirmDeactivate] = useState(null);
+  const [bulkOpen, setBulkOpen] = useState(false);
+
+  const filtered = employees.filter((e) => {
+    if (statusFilter === "active" && !e.active) return false;
+    if (statusFilter === "inactive" && e.active) return false;
+    if (!q.trim()) return true;
+    const t = q.toLowerCase();
+    return e.name.toLowerCase().includes(t) || e.employee_number.toLowerCase().includes(t) || e.company.toLowerCase().includes(t) || e.department.toLowerCase().includes(t);
+  });
+
+  const save = async (data) => {
+    if (!data.employee_number.trim() || !data.name.trim()) { notify("Employee ID and name are required", "error"); return; }
+    const dupe = employees.find((e) => e.employee_number.trim().toLowerCase() === data.employee_number.trim().toLowerCase() && e.id !== data.id);
+    if (dupe) { notify("That Employee ID is already in use", "error"); return; }
+    let next;
+    if (data.id) {
+      next = employees.map((e) => (e.id === data.id ? { ...e, ...data, updated_at: Date.now() } : e));
+      notify("Employee updated");
+    } else {
+      next = [{ ...data, id: uid("e_"), active: true, created_at: Date.now(), updated_at: Date.now() }, ...employees];
+      notify("Employee added");
+    }
+    await persistEmployees(next);
+    setEditing(null);
+  };
+
+  const toggleActive = async (emp) => {
+    const next = employees.map((e) => (e.id === emp.id ? { ...e, active: !e.active, updated_at: Date.now() } : e));
+    await persistEmployees(next);
+    notify(emp.active ? `${emp.name} deactivated` : `${emp.name} reactivated`);
+    setConfirmDeactivate(null);
+  };
+
+  const demoCount = employees.filter((e) => e.demo).length;
+
+  const removeDemo = async () => {
+    await persistEmployees(employees.filter((e) => !e.demo));
+    notify(`Removed ${demoCount} demo employee${demoCount === 1 ? "" : "s"}`);
+  };
+
+  return (
+    <div>
+      <SectionTitle title="Employee Management" sub={`${employees.filter((e) => e.active).length} active · ${employees.filter((e) => !e.active).length} inactive`}
+        action={{ label: "+ Add employee", onClick: () => setEditing({}) }} />
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+        <Btn size="sm" tone="paper" icon={UserPlus} onClick={() => setBulkOpen(true)}>Bulk add employees</Btn>
+        {demoCount > 0 && <Btn size="sm" tone="ghost" icon={Trash2} onClick={removeDemo}>Remove {demoCount} demo employee{demoCount === 1 ? "" : "s"}</Btn>}
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+        <div style={{ position: "relative", flex: 1, minWidth: 180 }}>
+          <Search size={15} style={{ position: "absolute", left: 10, top: 11, color: C.ink50 }} />
+          <input style={{ ...inputStyle, paddingLeft: 32 }} placeholder="Search employees…" value={q} onChange={(e) => setQ(e.target.value)} />
+        </div>
+        <select style={{ ...inputStyle, width: "auto" }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+          <option value="active">Active</option><option value="inactive">Inactive</option><option value="all">All</option>
+        </select>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {filtered.length === 0 && <EmptyState icon={Users} title="No employees found" />}
+        {filtered.map((e) => (
+          <div key={e.id} style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, padding: "12px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontWeight: 600, fontSize: 14.5, color: C.ink }}>{e.name}</span>
+                {!e.active && <Badge tone="missing">INACTIVE</Badge>}
+                {e.demo && <Badge tone="neutral">DEMO</Badge>}
+              </div>
+              <div style={{ fontSize: 12.5, color: C.ink50, marginTop: 2 }}>
+                <span style={{ fontFamily: FONT_MONO }}>{e.employee_number}</span> · {e.company} · {e.department} · {e.designation}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+              <button onClick={() => setEditing(e)} style={{ background: C.paperDim, border: "none", borderRadius: 7, padding: 8, cursor: "pointer", color: C.navy }}><Edit3 size={15} /></button>
+              <button onClick={() => setConfirmDeactivate(e)} style={{ background: e.active ? "#F7E7E5" : "#EAF4EC", border: "none", borderRadius: 7, padding: 8, cursor: "pointer", color: e.active ? C.redDeep : C.greenDeep }}>
+                {e.active ? <Trash2 size={15} /> : <RefreshCw size={15} />}
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {editing !== null && <EmployeeForm employee={editing} onClose={() => setEditing(null)} onSave={save} />}
+
+      {bulkOpen && (
+        <BulkAddModal employees={employees} onClose={() => setBulkOpen(false)}
+          onAdd={async (newOnes) => { await persistEmployees([...newOnes, ...employees]); setBulkOpen(false); notify(`Added ${newOnes.length} employee${newOnes.length === 1 ? "" : "s"}`); }} />
+      )}
+
+      {confirmDeactivate && (
+        <Modal title={confirmDeactivate.active ? "Deactivate Employee" : "Reactivate Employee"} onClose={() => setConfirmDeactivate(null)}>
+          <p style={{ fontSize: 14, color: C.ink, lineHeight: 1.5 }}>
+            {confirmDeactivate.active
+              ? <>Deactivate <b>{confirmDeactivate.name}</b>? They won't be checkable-in at the gate, but their attendance history is kept permanently.</>
+              : <>Reactivate <b>{confirmDeactivate.name}</b>? They will be checkable-in at the gate again.</>}
+          </p>
+          <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+            <Btn tone="ghost" onClick={() => setConfirmDeactivate(null)}>Cancel</Btn>
+            <Btn tone={confirmDeactivate.active ? "red" : "green"} onClick={() => toggleActive(confirmDeactivate)}>
+              {confirmDeactivate.active ? "Deactivate" : "Reactivate"}
+            </Btn>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function EmployeeForm({ employee, onClose, onSave }) {
+  const isNew = !employee.id;
+  const [data, setData] = useState({
+    id: employee.id || null, employee_number: employee.employee_number || "", name: employee.name || "",
+    company: employee.company || "", department: employee.department || "", designation: employee.designation || "", phone: employee.phone || "",
+  });
+  const set = (k) => (e) => setData((d) => ({ ...d, [k]: e.target.value }));
+  return (
+    <Modal title={isNew ? "Add Employee" : "Edit Employee"} onClose={onClose}>
+      <Field label="Employee ID / Number"><input style={inputStyle} value={data.employee_number} onChange={set("employee_number")} placeholder="EMP-1050" /></Field>
+      <Field label="Employee Name"><input style={inputStyle} value={data.name} onChange={set("name")} /></Field>
+      <Field label="Company"><input style={inputStyle} value={data.company} onChange={set("company")} /></Field>
+      <Field label="Department"><input style={inputStyle} value={data.department} onChange={set("department")} /></Field>
+      <Field label="Designation"><input style={inputStyle} value={data.designation} onChange={set("designation")} /></Field>
+      <Field label="Phone Number (optional)"><input style={inputStyle} value={data.phone} onChange={set("phone")} /></Field>
+      <Btn full tone="navy" onClick={() => onSave(data)}>{isNew ? "Add Employee" : "Save Changes"}</Btn>
+    </Modal>
+  );
+}
+
+/* ---------------------------------------------------------------------
+   BULK ADD EMPLOYEES
+   Paste one employee per line so a full roster can be added in seconds
+   instead of one at a time. Employee IDs are generated automatically.
+--------------------------------------------------------------------- */
+function nextEmployeeNumber(employees, offset) {
+  let max = 1000;
+  employees.forEach((e) => {
+    const m = /(\d+)\s*$/.exec(e.employee_number || "");
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  });
+  return `EMP-${max + offset}`;
+}
+
+function BulkAddModal({ employees, onClose, onAdd }) {
+  const [raw, setRaw] = useState("");
+  const [defCompany, setDefCompany] = useState("");
+  const [defDept, setDefDept] = useState("");
+  const [defDesignation, setDefDesignation] = useState("");
+
+  const parsed = useMemo(() => {
+    return raw.split("\n").map((line) => line.trim()).filter(Boolean).map((line) => {
+      const parts = line.split(",").map((p) => p.trim());
+      return {
+        name: parts[0] || "",
+        company: parts[1] || defCompany,
+        department: parts[2] || defDept,
+        designation: parts[3] || defDesignation,
+        phone: parts[4] || "",
+      };
+    }).filter((p) => p.name);
+  }, [raw, defCompany, defDept, defDesignation]);
+
+  const existingNames = useMemo(() => new Set(employees.map((e) => e.name.trim().toLowerCase())), [employees]);
+  const duplicateCount = parsed.filter((p) => existingNames.has(p.name.trim().toLowerCase())).length;
+
+  const confirm = () => {
+    if (parsed.length === 0) return;
+    const created = parsed.map((p, i) => ({
+      id: uid("e_"), employee_number: nextEmployeeNumber(employees, i + 1), name: p.name,
+      company: p.company, department: p.department, designation: p.designation, phone: p.phone,
+      active: true, created_at: Date.now(), updated_at: Date.now(),
+    }));
+    onAdd(created);
+  };
+
+  return (
+    <Modal title="Bulk Add Employees" onClose={onClose} wide>
+      <p style={{ fontSize: 12.5, color: C.ink50, marginTop: 0, lineHeight: 1.6 }}>
+        Paste one employee per line. Each line can just be a name, or add more detail separated by commas:<br />
+        <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, background: C.paperDim, padding: "1px 5px", borderRadius: 4 }}>
+          Name, Company, Department, Designation, Phone
+        </span><br />
+        Employee IDs are assigned automatically. Blank fields use the defaults below.
+      </p>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
+        <Field label="Default company"><input style={inputStyle} value={defCompany} onChange={(e) => setDefCompany(e.target.value)} placeholder="optional" /></Field>
+        <Field label="Default department"><input style={inputStyle} value={defDept} onChange={(e) => setDefDept(e.target.value)} placeholder="optional" /></Field>
+        <Field label="Default designation"><input style={inputStyle} value={defDesignation} onChange={(e) => setDefDesignation(e.target.value)} placeholder="optional" /></Field>
+      </div>
+
+      <Field label="Employees (one per line)">
+        <textarea
+          style={{ ...inputStyle, minHeight: 160, fontFamily: FONT_MONO, fontSize: 13 }}
+          value={raw}
+          onChange={(e) => setRaw(e.target.value)}
+          placeholder={"James Mwangi\nAlice Wanjiru, Northgate Logistics, Warehouse, Driver\nDavid Njoroge, Northgate Logistics, IT, Technician, 0712345678"}
+        />
+      </Field>
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, fontSize: 12.5, color: C.ink50 }}>
+        <span>{parsed.length} employee{parsed.length === 1 ? "" : "s"} ready to add</span>
+        {duplicateCount > 0 && <span style={{ color: C.amberDeep }}>{duplicateCount} name{duplicateCount === 1 ? "" : "s"} match existing employees</span>}
+      </div>
+
+      {parsed.length > 0 && (
+        <div style={{ maxHeight: 160, overflowY: "auto", border: `1px solid ${C.line}`, borderRadius: 8, marginBottom: 14 }}>
+          {parsed.map((p, i) => (
+            <div key={i} style={{ padding: "7px 10px", fontSize: 12.5, borderBottom: i < parsed.length - 1 ? `1px solid ${C.line}` : "none", display: "flex", justifyContent: "space-between" }}>
+              <span style={{ fontWeight: 600 }}>{p.name}</span>
+              <span style={{ color: C.ink50 }}>{[p.company, p.department, p.designation].filter(Boolean).join(" · ") || "—"}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Btn full tone="navy" icon={UserPlus} onClick={confirm} disabled={parsed.length === 0}>
+        Add {parsed.length || ""} Employee{parsed.length === 1 ? "" : "s"}
+      </Btn>
+    </Modal>
+  );
+}
+
+/* ---------------------------------------------------------------------
+   REPORTS (admin)
+--------------------------------------------------------------------- */
+function ReportsScreen({ employees, attendance, empById, settings }) {
+  const [tab, setTab] = useState("daily");
+  return (
+    <div>
+      <SectionTitle title="Reports" />
+      <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
+        {[["daily", "Daily"], ["weekly", "Weekly"], ["monthly", "Monthly"], ["employee", "Employee"]].map(([k, l]) => (
+          <button key={k} onClick={() => setTab(k)} style={{
+            padding: "7px 12px", borderRadius: 20, fontSize: 12.5, fontWeight: 600, cursor: "pointer",
+            border: `1px solid ${tab === k ? C.navy : C.line}`, background: tab === k ? C.navy : "#fff", color: tab === k ? "#fff" : C.ink,
+          }}>{l}</button>
+        ))}
+      </div>
+      {tab === "daily" && <PeriodReport mode="daily" employees={employees} attendance={attendance} empById={empById} settings={settings} />}
+      {tab === "weekly" && <PeriodReport mode="weekly" employees={employees} attendance={attendance} empById={empById} settings={settings} />}
+      {tab === "monthly" && <PeriodReport mode="monthly" employees={employees} attendance={attendance} empById={empById} settings={settings} />}
+      {tab === "employee" && <EmployeeReport employees={employees} attendance={attendance} settings={settings} />}
+    </div>
+  );
+}
+
+function PeriodReport({ mode, employees, attendance, empById, settings }) {
+  const [date, setDate] = useState(todayStr());
+  const [month, setMonth] = useState(todayStr().slice(0, 7));
+
+  let from, to, label;
+  if (mode === "daily") { from = to = date; label = fmtDate(date); }
+  else if (mode === "weekly") {
+    const start = startOfWeek(new Date(date + "T00:00:00"));
+    const end = new Date(start); end.setDate(end.getDate() + 6);
+    from = todayStr(start); to = todayStr(end); label = `${fmtDate(from)} – ${fmtDate(to)}`;
+  } else {
+    from = `${month}-01`;
+    const [y, m] = month.split("-").map(Number);
+    const last = new Date(y, m, 0).getDate();
+    to = `${month}-${String(last).padStart(2, "0")}`;
+    label = new Date(from + "T00:00:00").toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  }
+
+  const shiftHours = settings.shift_hours || 9;
+  const rows = attendance.filter((a) => a.date >= from && a.date <= to).map((a) => ({ ...a, emp: empById[a.employee_id] })).filter((r) => r.emp);
+  rows.sort((a, b) => (b.date + b.time_in).localeCompare(a.date + a.time_in));
+  const overtimeTotal = rows.reduce((s, r) => s + overtimeMinutes(r.total_minutes, shiftHours), 0);
+  const overtimeCount = rows.filter((r) => overtimeMinutes(r.total_minutes, shiftHours) > 0).length;
+  const missingCheckout = rows.filter((r) => r.status === "INSIDE" && r.date < todayStr()).length;
+  const totalMinutes = rows.reduce((s, r) => s + (r.total_minutes || 0), 0);
+
+  const headers = [
+    { label: "Date", get: (r) => r.date }, { label: "Employee", get: (r) => r.emp.name }, { label: "Employee ID", get: (r) => r.emp.employee_number },
+    { label: "Company", get: (r) => r.emp.company }, { label: "Time In", get: (r) => r.time_in }, { label: "Time Out", get: (r) => r.time_out || "" },
+    { label: "Total Hours", get: (r) => r.total_minutes != null ? fmtDuration(r.total_minutes) : "" }, { label: "Status", get: (r) => r.status },
+    { label: "Overtime", get: (r) => fmtDuration(overtimeMinutes(r.total_minutes, shiftHours)) }, { label: "Recorded By", get: (r) => r.status === "INSIDE" ? r.checked_in_by : r.checked_out_by },
+  ];
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 10, alignItems: "flex-end", marginBottom: 14, flexWrap: "wrap" }}>
+        {mode === "monthly" ? (
+          <Field label="Month"><input type="month" style={inputStyle} value={month} onChange={(e) => setMonth(e.target.value)} /></Field>
+        ) : (
+          <Field label={mode === "weekly" ? "Any date in week" : "Date"}><input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+        )}
+        <Btn size="sm" tone="paper" icon={Download} onClick={() => downloadFile(`${mode}-report-${from}_${to}.csv`, toCSV(rows, headers), "text/csv")}>CSV</Btn>
+        <Btn size="sm" tone="paper" icon={FileDown} onClick={() => window.print()}>PDF (Print)</Btn>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(120px,1fr))", gap: 10, marginBottom: 16 }}>
+        <StatCard label="Period" value={label} icon={CalendarDays} tone="navy" />
+        <StatCard label="Total Records" value={rows.length} icon={ClipboardList} tone="slate" />
+        <StatCard label="Overtime Records" value={overtimeCount} icon={AlertTriangle} tone="amber" />
+        <StatCard label="Total Overtime" value={fmtDuration(overtimeTotal)} icon={TimerReset} tone="amber" />
+        <StatCard label="Missing Check-outs" value={missingCheckout} icon={XCircle} tone="red" />
+        <StatCard label="Total Hours Logged" value={fmtDuration(totalMinutes)} icon={Clock} tone="green" />
+      </div>
+
+      <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, overflow: "hidden" }}>
+        {rows.length === 0 ? <EmptyState icon={BarChart3} title="No attendance in this period" /> : (
+          <TableScroll headers={["Date", "Employee", "ID", "Time In", "Time Out", "Hours", "Status"]}>
+            {rows.map((r) => (
+              <tr key={r.id}>
+                <Td>{r.date}</Td><Td>{r.emp.name}</Td><TdMono>{r.emp.employee_number}</TdMono>
+                <TdMono>{fmtTime(r.time_in)}</TdMono><TdMono>{r.time_out ? fmtTime(r.time_out) : "—"}</TdMono>
+                <Td>{r.total_minutes != null ? fmtDuration(r.total_minutes) : "—"}</Td><Td><StatusBadge a={r} shiftHours={settings.shift_hours} /></Td>
+              </tr>
+            ))}
+          </TableScroll>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function EmployeeReport({ employees, attendance, settings }) {
+  const [empId, setEmpId] = useState(employees[0]?.id || "");
+  const emp = employees.find((e) => e.id === empId);
+  const shiftHours = settings.shift_hours || 9;
+  const rows = attendance.filter((a) => a.employee_id === empId);
+  const totalDays = rows.length;
+  const totalMinutes = rows.reduce((s, r) => s + (r.total_minutes || 0), 0);
+  const avgMinutes = totalDays ? Math.round(rows.filter(r=>r.total_minutes!=null).reduce((s,r)=>s+r.total_minutes,0) / Math.max(1, rows.filter(r=>r.total_minutes!=null).length)) : 0;
+  const overtimeTotal = rows.reduce((s, r) => s + overtimeMinutes(r.total_minutes, shiftHours), 0);
+  const overtimeCount = rows.filter((r) => overtimeMinutes(r.total_minutes, shiftHours) > 0).length;
+  const missing = rows.filter((r) => r.status === "INSIDE" && r.date < todayStr()).length;
+
+  const headers = [
+    { label: "Date", get: (r) => r.date }, { label: "Time In", get: (r) => r.time_in }, { label: "Time Out", get: (r) => r.time_out || "" },
+    { label: "Total Hours", get: (r) => r.total_minutes != null ? fmtDuration(r.total_minutes) : "" }, { label: "Status", get: (r) => r.status },
+    { label: "Overtime", get: (r) => fmtDuration(overtimeMinutes(r.total_minutes, shiftHours)) },
+  ];
+
+  return (
+    <div>
+      <Field label="Employee">
+        <select style={inputStyle} value={empId} onChange={(e) => setEmpId(e.target.value)}>
+          {employees.map((e) => <option key={e.id} value={e.id}>{e.name} ({e.employee_number})</option>)}
+        </select>
+      </Field>
+      {emp && (
+        <>
+          <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+            <Btn size="sm" tone="paper" icon={Download} onClick={() => downloadFile(`${emp.employee_number}-report.csv`, toCSV(rows, headers), "text/csv")}>CSV</Btn>
+            <Btn size="sm" tone="paper" icon={FileDown} onClick={() => window.print()}>PDF (Print)</Btn>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(120px,1fr))", gap: 10, marginBottom: 16 }}>
+            <StatCard label="Attendance Days" value={totalDays} icon={CalendarDays} tone="navy" />
+            <StatCard label="Total Hours" value={fmtDuration(totalMinutes)} icon={Clock} tone="slate" />
+            <StatCard label="Average Hours/Day" value={fmtDuration(avgMinutes)} icon={BarChart3} tone="green" />
+            <StatCard label="Overtime Days" value={overtimeCount} icon={AlertTriangle} tone="amber" />
+            <StatCard label="Total Overtime" value={fmtDuration(overtimeTotal)} icon={TimerReset} tone="amber" />
+            <StatCard label="Missing Check-outs" value={missing} icon={XCircle} tone="red" />
+          </div>
+          <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, overflow: "hidden" }}>
+            {rows.length === 0 ? <EmptyState icon={ClipboardList} title="No attendance history for this employee" /> : (
+              <TableScroll headers={["Date", "Time In", "Time Out", "Hours", "Status"]}>
+                {rows.slice().sort((a,b)=>b.date.localeCompare(a.date)).map((r) => (
+                  <tr key={r.id}><Td>{r.date}</Td><TdMono>{fmtTime(r.time_in)}</TdMono><TdMono>{r.time_out ? fmtTime(r.time_out) : "—"}</TdMono>
+                  <Td>{r.total_minutes != null ? fmtDuration(r.total_minutes) : "—"}</Td><Td><StatusBadge a={r} shiftHours={shiftHours} /></Td></tr>
+                ))}
+              </TableScroll>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------
+   SETTINGS (admin)
+--------------------------------------------------------------------- */
+function SettingsScreen({ settings, persistSettings, users, persistUsers, notify, loadSample, eraseAll, busy, sendReport, syncMode, canWriteShared, firebaseError }) {
+  const [shiftHours, setShiftHours] = useState(settings.shift_hours || 9);
+  const [newUser, setNewUser] = useState({ name: "", username: "", password: "", role: "guard" });
+  const [confirmSample, setConfirmSample] = useState(false);
+  const [confirmErase, setConfirmErase] = useState(false);
+  const rd0 = settings.report_delivery || { enabled: false, recipient_name: "", recipient_email: "", frequency: "daily", time: "18:00", last_sent: null };
+  const [rd, setRd] = useState(rd0);
+  const savedFbConfig = getSavedFirebaseConfig();
+  const [fbForm, setFbForm] = useState(savedFbConfig || { apiKey: "", authDomain: "", projectId: "", storageBucket: "", messagingSenderId: "", appId: "" });
+  const [fbSaved, setFbSaved] = useState(false);
+
+  const connectFirebase = () => {
+    if (!fbForm.apiKey.trim() || !fbForm.authDomain.trim() || !fbForm.projectId.trim() || !fbForm.appId.trim()) {
+      notify("API Key, Auth Domain, Project ID, and App ID are all required", "error"); return;
+    }
+    saveFirebaseConfig(fbForm);
+    setFbSaved(true);
+  };
+  const disconnectFirebase = () => {
+    clearFirebaseConfig();
+    setFbForm({ apiKey: "", authDomain: "", projectId: "", storageBucket: "", messagingSenderId: "", appId: "" });
+    setFbSaved(true);
+  };
+  const copyConnectionCode = async () => {
+    if (!fbForm.apiKey.trim() || !fbForm.authDomain.trim() || !fbForm.projectId.trim() || !fbForm.appId.trim()) {
+      notify("Fill in and save the Firebase details first", "error"); return;
+    }
+    const code = encodeFirebaseConfig(fbForm);
+    try {
+      await navigator.clipboard.writeText(code);
+      notify("Connection code copied — send it to your guards");
+    } catch {
+      notify("Couldn't copy automatically — select the code below and copy it manually", "error");
+    }
+  };
+
+  const saveShift = async () => {
+    const h = parseFloat(shiftHours);
+    if (!h || h <= 0) { notify("Enter a shift length greater than 0", "error"); return; }
+    await persistSettings({ ...settings, shift_hours: h });
+    notify("Settings saved");
+  };
+
+  const saveReportDelivery = async () => {
+    if (rd.enabled && !rd.recipient_email.trim()) { notify("Enter the manager's email address", "error"); return; }
+    await persistSettings({ ...settings, report_delivery: rd });
+    notify("Report delivery settings saved");
+  };
+
+  const addUser = async () => {
+    if (!newUser.name.trim() || !newUser.username.trim() || newUser.password.length < 4) {
+      notify("Provide name, username, and a password of at least 4 characters", "error"); return;
+    }
+    if (users.some((u) => u.username.toLowerCase() === newUser.username.trim().toLowerCase())) {
+      notify("That username already exists", "error"); return;
+    }
+    const hash = await sha256(newUser.password);
+    await persistUsers([{ id: uid("u_"), name: newUser.name, username: newUser.username, passwordHash: hash, role: newUser.role, active: true, created_at: Date.now() }, ...users]);
+    setNewUser({ name: "", username: "", password: "", role: "guard" });
+    notify("Account created");
+  };
+
+  const toggleUserActive = async (u) => {
+    await persistUsers(users.map((x) => (x.id === u.id ? { ...x, active: !x.active } : x)));
+  };
+
+  return (
+    <div>
+      <SectionTitle title="Settings" />
+
+      <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, padding: 16, marginBottom: 16 }}>
+        <h3 style={{ fontFamily: FONT_SERIF, fontSize: 16, margin: "0 0 4px" }}>Devices &amp; Syncing</h3>
+        {syncMode === "synced" ? (
+          <>
+            <p style={{ fontSize: 12.5, color: C.ink50, margin: "0 0 10px", lineHeight: 1.5 }}>
+              This device is <b style={{ color: C.greenDeep }}>synced via Claude</b> — anyone who opens this same link
+              sees the same live employees, attendance, and leave records, updating in real time.
+            </p>
+            {canWriteShared === false ? (
+              <div style={{ background: "#F7E7E5", color: C.redDeep, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, lineHeight: 1.6 }}>
+                <b>This device can view but not save changes.</b> The person who owns this page needs to give you edit
+                access: open the page's <b>Share</b> menu and set your access (or general link access) to at least
+                <b> Contributor</b>. Writing data also requires being signed in to a Claude account.
+              </div>
+            ) : (
+              <div style={{ background: "#EAF4EC", color: C.greenDeep, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, lineHeight: 1.6 }}>
+                This device can both read and save changes.
+              </div>
+            )}
+            <p style={{ fontSize: 11.5, color: C.ink50, margin: "10px 0 0", lineHeight: 1.6 }}>
+              To let a guard's phone save check-ins here too: open the <b>Share</b> menu on this page (top of the Claude
+              window, not inside this app), invite their account or set link access to Contributor or above, then have
+              them open the same link and sign in. A downloaded HTML file never syncs this way — see Firebase Sync below
+              for an independent option.
+            </p>
+          </>
+        ) : syncMode === "firebase" ? (
+          <div style={{ background: "#EAF4EC", color: C.greenDeep, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, lineHeight: 1.6 }}>
+            Connected to your own Firebase project — this device reads and writes live, shared with every other device
+            connected to the same Firebase project. See Firebase Sync below for connection details.
+          </div>
+        ) : (
+          <p style={{ fontSize: 12.5, color: C.ink50, margin: 0, lineHeight: 1.6 }}>
+            This copy is <b style={{ color: C.amberDeep }}>local to this device only</b> — data here stays in this
+            browser and won't appear on other phones. This happens when the app is opened as a downloaded file, or in a
+            preview that doesn't support shared syncing. Use the hosted Claude link for Claude-based syncing, or connect
+            your own Firebase project below for an independent setup (e.g. hosted on GitHub Pages).
+          </p>
+        )}
+      </div>
+
+      <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, padding: 16, marginBottom: 16 }}>
+        <h3 style={{ fontFamily: FONT_SERIF, fontSize: 16, margin: "0 0 4px" }}>Firebase Sync</h3>
+        <p style={{ fontSize: 12.5, color: C.ink50, margin: "0 0 12px", lineHeight: 1.6 }}>
+          Connect your own Firebase project for syncing that works independently of Claude — useful if this app is
+          downloaded and hosted elsewhere (e.g. GitHub Pages). <b>This only works when the page is opened outside
+          Claude's preview</b> — Claude's own viewer blocks the network calls Firebase needs.
+        </p>
+
+        {firebaseError && (
+          <div style={{ background: "#F7E7E5", color: C.redDeep, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, lineHeight: 1.6, marginBottom: 12 }}>
+            <b>Connection failed:</b> {firebaseError}
+          </div>
+        )}
+
+        {fbSaved && (
+          <div style={{ background: "#EAF4EC", color: C.greenDeep, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, lineHeight: 1.6, marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+            <span>Saved. Reload this page for it to take effect.</span>
+            <Btn size="sm" tone="green" icon={RefreshCw} onClick={() => window.location.reload()}>Reload Now</Btn>
+          </div>
+        )}
+
+        <details style={{ marginBottom: 14 }}>
+          <summary style={{ cursor: "pointer", fontSize: 12.5, fontWeight: 600, color: C.navy }}>How to get these values from Firebase</summary>
+          <ol style={{ fontSize: 12, color: C.ink50, lineHeight: 1.8, paddingLeft: 18, margin: "8px 0 0" }}>
+            <li>Go to <span style={{ fontFamily: FONT_MONO }}>console.firebase.google.com</span> and create a project (free tier is enough).</li>
+            <li><b>Build → Firestore Database → Create database</b> (any region, start in production mode).</li>
+            <li><b>Build → Authentication → Sign-in method</b> → enable <b>Anonymous</b>.</li>
+            <li>In <b>Firestore → Rules</b>, replace the rules with: <span style={{ fontFamily: FONT_MONO, display: "block", background: C.paperDim, padding: 8, borderRadius: 6, marginTop: 4 }}>{`allow read, write: if request.auth != null;`}</span></li>
+            <li>Project settings (gear icon) → <b>General</b> → scroll to "Your apps" → add a <b>Web app</b> → copy the values it gives you into the fields below.</li>
+          </ol>
+        </details>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <Field label="API Key"><input style={inputStyle} value={fbForm.apiKey} onChange={(e) => setFbForm((f) => ({ ...f, apiKey: e.target.value }))} /></Field>
+          <Field label="Auth Domain"><input style={inputStyle} value={fbForm.authDomain} onChange={(e) => setFbForm((f) => ({ ...f, authDomain: e.target.value }))} placeholder="project.firebaseapp.com" /></Field>
+          <Field label="Project ID"><input style={inputStyle} value={fbForm.projectId} onChange={(e) => setFbForm((f) => ({ ...f, projectId: e.target.value }))} /></Field>
+          <Field label="App ID"><input style={inputStyle} value={fbForm.appId} onChange={(e) => setFbForm((f) => ({ ...f, appId: e.target.value }))} /></Field>
+          <Field label="Storage Bucket (optional)"><input style={inputStyle} value={fbForm.storageBucket} onChange={(e) => setFbForm((f) => ({ ...f, storageBucket: e.target.value }))} /></Field>
+          <Field label="Messaging Sender ID (optional)"><input style={inputStyle} value={fbForm.messagingSenderId} onChange={(e) => setFbForm((f) => ({ ...f, messagingSenderId: e.target.value }))} /></Field>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+          <Btn tone="navy" onClick={connectFirebase}>Save &amp; Connect</Btn>
+          {syncMode === "firebase" && <Btn tone="red" onClick={disconnectFirebase}>Disconnect</Btn>}
+        </div>
+
+        <div style={{ borderTop: `1px dashed ${C.line}`, paddingTop: 12 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 4 }}>Give guards and your manager access</div>
+          <p style={{ fontSize: 12, color: C.ink50, margin: "0 0 8px", lineHeight: 1.6 }}>
+            They can't reach this Settings screen on their own phones — instead, send them this one code (over
+            WhatsApp, SMS, etc). On their phone, before logging in, they tap "Connect to the shared database" on the
+            login screen and paste it in.
+          </p>
+          <Btn size="sm" tone="paper" icon={ShieldCheck} onClick={copyConnectionCode}>Copy Connection Code</Btn>
+          {fbForm.apiKey && fbForm.authDomain && fbForm.projectId && fbForm.appId && (
+            <div style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: C.ink50, background: C.paperDim, padding: 8, borderRadius: 6, marginTop: 8, wordBreak: "break-all", userSelect: "all" }}>
+              {encodeFirebaseConfig(fbForm)}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, padding: 16, marginBottom: 16 }}>
+        <h3 style={{ fontFamily: FONT_SERIF, fontSize: 16, margin: "0 0 4px" }}>Shift Length</h3>
+        <p style={{ fontSize: 12.5, color: C.ink50, margin: "0 0 12px", lineHeight: 1.5 }}>
+          There's no fixed arrival or departure time — employees can check in whenever they arrive. A shift is considered
+          complete this many hours after check-in; anything worked beyond that is counted as overtime, shown throughout
+          the app and in reports.
+        </p>
+        <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+          <Field label="Standard shift length (hours)">
+            <input type="number" min="1" max="24" step="0.5" style={{ ...inputStyle, maxWidth: 140 }} value={shiftHours} onChange={(e) => setShiftHours(e.target.value)} />
+          </Field>
+          <Btn tone="navy" onClick={saveShift}>Save</Btn>
+        </div>
+      </div>
+
+      <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, padding: 16, marginBottom: 16 }}>
+        <h3 style={{ fontFamily: FONT_SERIF, fontSize: 16, margin: "0 0 4px" }}>Report Delivery</h3>
+        <p style={{ fontSize: 12.5, color: C.ink50, margin: "0 0 12px", lineHeight: 1.5 }}>
+          Send the attendance report to a manager daily, weekly, or monthly. Since this app runs in your browser with no
+          background server, it can't send email on its own — instead, whoever opens the app sees a reminder when a report
+          is due, and one tap builds it and opens it in your email app with the CSV ready to attach.
+        </p>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, cursor: "pointer" }}>
+          <input type="checkbox" checked={rd.enabled} onChange={(e) => setRd((r) => ({ ...r, enabled: e.target.checked }))} />
+          <span style={{ fontSize: 13.5, fontWeight: 600 }}>Enable scheduled report reminders</span>
+        </label>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <Field label="Manager's name"><input style={inputStyle} value={rd.recipient_name} onChange={(e) => setRd((r) => ({ ...r, recipient_name: e.target.value }))} placeholder="e.g. Mr Shihabuddin" /></Field>
+          <Field label="Manager's email"><input type="email" style={inputStyle} value={rd.recipient_email} onChange={(e) => setRd((r) => ({ ...r, recipient_email: e.target.value }))} placeholder="manager@company.com" /></Field>
+          <Field label="Frequency">
+            <select style={inputStyle} value={rd.frequency} onChange={(e) => setRd((r) => ({ ...r, frequency: e.target.value }))}>
+              <option value="daily">Every day</option><option value="weekly">Every week</option><option value="monthly">Every month</option>
+            </select>
+          </Field>
+          <Field label="Reminder time"><input type="time" style={inputStyle} value={rd.time} onChange={(e) => setRd((r) => ({ ...r, time: e.target.value }))} /></Field>
+        </div>
+        <div style={{ fontSize: 12, color: C.ink50, marginBottom: 12 }}>
+          Last sent: {rd.last_sent ? fmtDate(rd.last_sent) : "never"}
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <Btn tone="navy" onClick={saveReportDelivery}>Save Report Settings</Btn>
+          <Btn tone="paper" icon={FileDown} onClick={() => sendReport(rd.frequency)} disabled={!rd.recipient_email.trim()}>Send {rd.frequency} report now</Btn>
+        </div>
+      </div>
+
+      <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, padding: 16, marginBottom: 16 }}>
+        <h3 style={{ fontFamily: FONT_SERIF, fontSize: 16, margin: "0 0 12px" }}>Guard &amp; Admin Accounts</h3>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
+          {users.map((u) => (
+            <div key={u.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 10px", background: C.paperDim, borderRadius: 7 }}>
+              <div>
+                <span style={{ fontWeight: 600, fontSize: 13.5 }}>{u.name}</span>
+                <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, color: C.ink50, marginLeft: 8 }}>{u.username} · {u.role}</span>
+                {!u.active && <span style={{ marginLeft: 8 }}><Badge tone="missing">DISABLED</Badge></span>}
+              </div>
+              <button onClick={() => toggleUserActive(u)} style={{ background: "none", border: `1px solid ${C.line}`, borderRadius: 6, padding: "4px 8px", fontSize: 11.5, cursor: "pointer" }}>
+                {u.active ? "Disable" : "Enable"}
+              </button>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <Field label="Full name"><input style={inputStyle} value={newUser.name} onChange={(e) => setNewUser((n) => ({ ...n, name: e.target.value }))} /></Field>
+          <Field label="Username"><input style={inputStyle} value={newUser.username} onChange={(e) => setNewUser((n) => ({ ...n, username: e.target.value }))} /></Field>
+          <Field label="Password"><input type="password" style={inputStyle} value={newUser.password} onChange={(e) => setNewUser((n) => ({ ...n, password: e.target.value }))} /></Field>
+          <Field label="Role">
+            <select style={inputStyle} value={newUser.role} onChange={(e) => setNewUser((n) => ({ ...n, role: e.target.value }))}>
+              <option value="guard">Security Guard</option><option value="admin">Manager / Admin</option>
+            </select>
+          </Field>
+        </div>
+        <Btn tone="navy" icon={UserPlus} onClick={addUser}>Create Account</Btn>
+      </div>
+
+      <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, padding: 16 }}>
+        <h3 style={{ fontFamily: FONT_SERIF, fontSize: 16, margin: "0 0 8px" }}>Data Management</h3>
+        <p style={{ fontSize: 13, color: C.ink50, marginTop: 0, marginBottom: 14 }}>
+          This app starts with your login accounts only — no fake employees or attendance. Use the options below only if
+          you want to load a sample dataset for testing, or wipe everything to start completely over.
+        </p>
+
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 4 }}>Load sample data</div>
+          <div style={{ fontSize: 12, color: C.ink50, marginBottom: 8 }}>Replaces everything with 15 demo employees and sample attendance, for testing. Your real data (if any) will be lost.</div>
+          {!confirmSample ? (
+            <Btn tone="paper" icon={RefreshCw} onClick={() => setConfirmSample(true)}>Load Sample Data</Btn>
+          ) : (
+            <div style={{ display: "flex", gap: 8 }}>
+              <Btn tone="ghost" onClick={() => setConfirmSample(false)}>Cancel</Btn>
+              <Btn tone="amber" disabled={busy} onClick={async () => { await loadSample(); setConfirmSample(false); }}>{busy ? "Loading…" : "Confirm — Load Sample Data"}</Btn>
+            </div>
+          )}
+        </div>
+
+        <div>
+          <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 4 }}>Erase everything — fresh start</div>
+          <div style={{ fontSize: 12, color: C.ink50, marginBottom: 8 }}>Permanently deletes all employees, attendance, and audit history. Your login accounts are kept so you can still sign in afterward.</div>
+          {!confirmErase ? (
+            <Btn tone="red" icon={Trash2} onClick={() => setConfirmErase(true)}>Erase Everything</Btn>
+          ) : (
+            <div style={{ display: "flex", gap: 8 }}>
+              <Btn tone="ghost" onClick={() => setConfirmErase(false)}>Cancel</Btn>
+              <Btn tone="red" disabled={busy} onClick={async () => { await eraseAll(); setConfirmErase(false); }}>{busy ? "Erasing…" : "Confirm — Erase Everything"}</Btn>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+const rootEl = document.getElementById("root");
+const root = ReactDOM.createRoot(rootEl);
+root.render(<App />);
+
+</script>
+</body>
+</html>
