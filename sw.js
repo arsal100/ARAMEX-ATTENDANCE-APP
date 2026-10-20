@@ -1,13 +1,15 @@
 
 const CACHE_NAME = "aramex109-gatehouse-v1";
 
+
 const APP_SHELL = [
   "./",
   "./index.html",
   "./manifest.json",
-  "./icons/icon-192.png",
-  "./icons/icon-512.png"
+  "./icon-192.png",
+  "./icon-512.png"
 ];
+
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -49,13 +51,12 @@ self.addEventListener("fetch", (event) => {
   // Only serve cached app-shell files for navigation and GET requests.
   if (request.method !== "GET") return;
 
-  const isAppShell =
+ const isAppShell =
     url.pathname === new URL("./", self.location.href).pathname ||
     url.pathname === new URL("./index.html", self.location.href).pathname ||
     url.pathname === new URL("./manifest.json", self.location.href).pathname ||
-    url.pathname === new URL("./icons/icon-192.png", self.location.href).pathname ||
-    url.pathname === new URL("./icons/icon-512.png", self.location.href).pathname;
-
+    url.pathname === new URL("./icon-192.png", self.location.href).pathname ||
+    url.pathname === new URL("./icon-512.png", self.location.href).pathname;
   if (!isAppShell) return;
 
   event.respondWith(
