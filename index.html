@@ -3,13 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
-
 <title>Gatehouse Register — Digital Gate Attendance</title>
-<link rel="manifest" href="./manifest.json">
-<link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
-<meta name="theme-color" content="#D90000">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@400;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   html, body { margin: 0; padding: 0; background: #F5F2EA; }
@@ -22,9 +17,6 @@
 <script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7/babel.min.js"></script>
 
-<!-- Firebase compat SDK: optional, only used if the person connects their own
-     Firebase project. Loading it here just defines window.firebase;
-     no network calls happen until initializeApp() is explicitly called. -->
 <script src="https://cdn.jsdelivr.net/npm/firebase@10/firebase-app-compat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/firebase@10/firebase-auth-compat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/firebase@10/firebase-firestore-compat.js"></script>
@@ -121,6 +113,7 @@ const UserCog = (p) => <IconBase {...p}><circle cx="9" cy="7" r="4"/><path d="M2
 const Eye = (p) => <IconBase {...p}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></IconBase>;
 const EyeOff = (p) => <IconBase {...p}><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a20.3 20.3 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a20.3 20.3 0 0 1-3.22 4.44"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></IconBase>;
 const UserX = (p) => <IconBase {...p}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="17" y1="8" x2="22" y2="13"/><line x1="22" y1="8" x2="17" y2="13"/></IconBase>;
+const Package = (p) => <IconBase {...p}><path d="M21 8l-9-5-9 5v8l9 5 9-5V8z"/><polyline points="3.3 7 12 12 20.7 7"/><line x1="12" y1="22" x2="12" y2="12"/></IconBase>;
 
 
 /* ---------------------------------------------------------------------
@@ -215,6 +208,9 @@ function elapsedMinutes(dateStr, timeIn) {
 function findLeave(leaves, employeeId, dateStr) {
   return leaves.find((l) => l.employee_id === employeeId && dateStr >= l.date_from && dateStr <= l.date_to) || null;
 }
+function stockLevel(itemId, movements) {
+  return movements.filter((m) => m.item_id === itemId).reduce((s, m) => s + (m.type === "IN" ? m.quantity : -m.quantity), 0);
+}
 function startOfWeek(d) {
   const dt = new Date(d);
   const day = dt.getDay();
@@ -303,10 +299,73 @@ function buildReportPayload(freq, employees, attendance, empById, settings) {
   return { subject, body: lines.join("\n"), csv: toCSV(rows, csvHeaders), filename: `${freq}-report-${from}_${to}.csv`, label, rowCount: rows.length };
 }
 
+function buildSecurityReportPayload(freq, visitors) {
+  const { from, to, label } = getPeriodRange(freq);
+  const rows = visitors.filter((v) => v.date >= from && v.date <= to);
+  rows.sort((a, b) => (b.date + b.time_in).localeCompare(a.date + a.time_in));
+  const inside = rows.filter((r) => r.status === "INSIDE").length;
+  const visitorCount = rows.filter((r) => r.type === "Visitor").length;
+  const contractorCount = rows.filter((r) => r.type === "Contractor").length;
+  const freqLabel = { daily: "Daily", weekly: "Weekly", monthly: "Monthly" }[freq] || "Security";
+
+  const subject = `${freqLabel} Gate Security Report — ${label}`;
+  const lines = [
+    `${freqLabel} Gate Security Report`, `Period: ${label}`, "",
+    `Total visitor/contractor entries: ${rows.length}`, `Visitors: ${visitorCount}`, `Contractors: ${contractorCount}`,
+    `Currently inside: ${inside}`, "",
+    "Recent entries:",
+    ...rows.slice(0, 15).map((r) => `- ${r.date} ${r.name} (${r.type}${r.company ? ", " + r.company : ""}): IN ${fmtTime(r.time_in)}${r.time_out ? ", OUT " + fmtTime(r.time_out) : " (still inside)"} — pass ${r.pass_number || "—"}, to see ${r.host_name || "—"}`),
+    rows.length > 15 ? `…and ${rows.length - 15} more record(s) — see attached CSV for the full list.` : "",
+    "", "Sent from the Gatehouse Register app.",
+  ].filter(Boolean);
+
+  const csvHeaders = [
+    { label: "Date", get: (r) => r.date }, { label: "Type", get: (r) => r.type }, { label: "Name", get: (r) => r.name },
+    { label: "Company", get: (r) => r.company || "" }, { label: "Phone", get: (r) => r.phone || "" }, { label: "Purpose", get: (r) => r.purpose || "" },
+    { label: "Department", get: (r) => r.department || "" }, { label: "Host", get: (r) => r.host_name || "" }, { label: "Pass Number", get: (r) => r.pass_number || "" },
+    { label: "ID Collected", get: (r) => r.id_collected ? "Yes" : "No" }, { label: "Time In", get: (r) => r.time_in }, { label: "Time Out", get: (r) => r.time_out || "" },
+    { label: "Status", get: (r) => r.status }, { label: "Checked In By", get: (r) => r.checked_in_by }, { label: "Checked Out By", get: (r) => r.checked_out_by || "" },
+  ];
+  return { subject, body: lines.join("\n"), csv: toCSV(rows, csvHeaders), filename: `security-${freq}-report-${from}_${to}.csv`, label, rowCount: rows.length };
+}
+
+function buildInventoryReportPayload(freq, stockItems, stockMovements) {
+  const { from, to, label } = getPeriodRange(freq);
+  const rows = stockMovements.filter((m) => m.date >= from && m.date <= to).map((m) => ({ ...m, item: stockItems.find((i) => i.id === m.item_id) })).filter((r) => r.item);
+  rows.sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
+  const itemById = Object.fromEntries(stockItems.map((i) => [i.id, i]));
+  const activeItems = stockItems.filter((i) => i.active);
+  const lowStock = activeItems.map((i) => ({ ...i, level: stockLevel(i.id, stockMovements) })).filter((i) => i.level <= i.min_threshold);
+  const freqLabel = { daily: "Daily", weekly: "Weekly", monthly: "Monthly" }[freq] || "Inventory";
+
+  const subject = `${freqLabel} Inventory Report — ${label}${lowStock.length ? ` (${lowStock.length} LOW STOCK)` : ""}`;
+  const lines = [
+    `${freqLabel} Inventory Report`, `Period: ${label}`, "",
+    `Movements this period: ${rows.length}`, `Items tracked: ${activeItems.length}`, "",
+    lowStock.length ? "LOW STOCK — reorder needed:" : "No items currently below their reorder threshold.",
+    ...lowStock.map((i) => `- ${i.name}: ${i.level} ${i.unit} on hand (minimum ${i.min_threshold})`),
+    "", "Recent movements:",
+    ...rows.slice(0, 15).map((r) => `- ${r.date} ${fmtTime(r.time)} ${r.item.name}: ${r.type} ${r.quantity} ${r.item.unit}${r.person_name ? ` (${r.type === "IN" ? "from" : "to"} ${r.person_name}${r.company ? ", " + r.company : ""})` : ""}`),
+    rows.length > 15 ? `…and ${rows.length - 15} more record(s) — see attached CSV for the full list.` : "",
+    "", "Sent from the Gatehouse Register app.",
+  ].filter(Boolean);
+
+  const csvHeaders = [
+    { label: "Date", get: (r) => r.date }, { label: "Time", get: (r) => r.time }, { label: "Item", get: (r) => r.item.name },
+    { label: "Type", get: (r) => r.type }, { label: "Quantity", get: (r) => r.quantity }, { label: "Unit", get: (r) => r.item.unit },
+    { label: "Person", get: (r) => r.person_name || "" }, { label: "Phone", get: (r) => r.phone || "" }, { label: "Company/Dept", get: (r) => r.company || "" },
+    { label: "ID/Card Number", get: (r) => r.id_card_number || "" }, { label: "Remarks", get: (r) => r.remarks || "" }, { label: "Recorded By", get: (r) => r.recorded_by },
+  ];
+  return { subject, body: lines.join("\n"), csv: toCSV(rows, csvHeaders), filename: `inventory-${freq}-report-${from}_${to}.csv`, label, rowCount: rows.length };
+}
+
 /* ---------------------------------------------------------------------
    STORAGE LAYER (shared, so guards + admin see one live register)
 --------------------------------------------------------------------- */
-const KEYS = { employees: "employees", users: "users", attendance: "attendance", audit: "auditLogs", settings: "settings", leaves: "leaves" };
+const KEYS = {
+  employees: "employees", users: "users", attendance: "attendance", audit: "auditLogs", settings: "settings", leaves: "leaves",
+  visitors: "visitors", stockItems: "stockItems", stockMovements: "stockMovements",
+};
 async function loadKey(key, fallback) {
   try {
     const res = await window.storage.get(key, true);
@@ -400,14 +459,31 @@ async function buildAccounts() {
     { id: "u_g2", name: "Amir Hamja", username: "amir", passwordHash: guard2pw, role: "guard", active: true, created_at: Date.now() },
   ];
 }
+function defaultChannel() {
+  return { enabled: false, recipient_name: "", recipient_email: "", frequency: "daily", time: "18:00", last_sent: null };
+}
 function defaultSettings() {
   return {
     shift_hours: 9,
-    report_delivery: { enabled: false, recipient_name: "", recipient_email: "", frequency: "daily", time: "18:00", last_sent: null },
+    report_channels: { attendance: defaultChannel(), security: defaultChannel(), inventory: defaultChannel() },
   };
 }
+// Older saves had one shared `report_delivery` channel — carry it forward as the
+// attendance channel the first time it's seen, rather than losing that setup.
+function migrateSettings(raw) {
+  if (!raw) return defaultSettings();
+  if (raw.report_channels) return raw;
+  if (raw.report_delivery) {
+    const { report_delivery, ...rest } = raw;
+    return { ...rest, report_channels: { attendance: report_delivery, security: defaultChannel(), inventory: defaultChannel() } };
+  }
+  return { ...defaultSettings(), ...raw };
+}
 async function buildFreshData() {
-  return { users: await buildAccounts(), employees: [], attendance: [], audit: [], leaves: [], settings: defaultSettings() };
+  return {
+    users: await buildAccounts(), employees: [], attendance: [], audit: [], leaves: [],
+    visitors: [], stockItems: [], stockMovements: [], settings: defaultSettings(),
+  };
 }
 async function buildSampleData() {
   const users = await buildAccounts();
@@ -471,10 +547,42 @@ async function buildSampleData() {
     });
   });
 
+  const visitors = [
+    {
+      id: uid("v_"), name: "Rashid Al Mazrouei", phone: "0551234567", company: "Gulf Freight Partners",
+      purpose: "Delivery coordination meeting", department: "Operations", host_name: "Arslan Ahmed",
+      pass_number: "VP-1001", id_collected: true, date: today, time_in: "09:15:00", time_out: null,
+      status: "INSIDE", checked_in_by: "Arslan Ahmed", checked_out_by: null, remarks: "", created_at: Date.now(), demo: true,
+    },
+    {
+      id: uid("v_"), name: "Sara Haidari", phone: "0509876543", company: "City Customs Brokers",
+      purpose: "Document collection", department: "Admin", host_name: "Mr Shihabuddin",
+      pass_number: "VP-1000", id_collected: true, date: today, time_in: "08:40:00", time_out: "09:05:00",
+      status: "CHECKED_OUT", checked_in_by: "Amir Hamja", checked_out_by: "Amir Hamja", remarks: "", created_at: Date.now(), demo: true,
+    },
+  ];
+
+  const stockItems = [
+    { id: uid("si_"), name: "Tea", unit: "boxes", min_threshold: 3, active: true, created_at: Date.now(), demo: true },
+    { id: uid("si_"), name: "Sugar", unit: "kg", min_threshold: 5, active: true, created_at: Date.now(), demo: true },
+    { id: uid("si_"), name: "Shipping Tags", unit: "packs", min_threshold: 10, active: true, created_at: Date.now(), demo: true },
+    { id: uid("si_"), name: "Stretch Wrap Rolls", unit: "rolls", min_threshold: 4, active: true, created_at: Date.now(), demo: true },
+  ];
+  const stockMovements = [
+    { id: uid("sm_"), item_id: stockItems[0].id, type: "IN", quantity: 10, date: y, time: "08:30:00", recorded_by: "Arslan Ahmed", remarks: "Supplier delivery", created_at: Date.now(), demo: true },
+    { id: uid("sm_"), item_id: stockItems[0].id, type: "OUT", quantity: 8, date: today, time: "07:50:00", recorded_by: "Amir Hamja", remarks: "Pantry restock", created_at: Date.now(), demo: true },
+    { id: uid("sm_"), item_id: stockItems[1].id, type: "IN", quantity: 20, date: y, time: "08:35:00", recorded_by: "Arslan Ahmed", remarks: "", created_at: Date.now(), demo: true },
+    { id: uid("sm_"), item_id: stockItems[1].id, type: "OUT", quantity: 14, date: today, time: "07:55:00", recorded_by: "Amir Hamja", remarks: "", created_at: Date.now(), demo: true },
+    { id: uid("sm_"), item_id: stockItems[2].id, type: "IN", quantity: 50, date: y, time: "09:00:00", recorded_by: "Arslan Ahmed", remarks: "Warehouse restock", created_at: Date.now(), demo: true },
+    { id: uid("sm_"), item_id: stockItems[2].id, type: "OUT", quantity: 35, date: today, time: "10:10:00", recorded_by: "Arslan Ahmed", remarks: "Issued to dispatch team", created_at: Date.now(), demo: true },
+    { id: uid("sm_"), item_id: stockItems[3].id, type: "IN", quantity: 6, date: y, time: "09:05:00", recorded_by: "Mr Shihabuddin", remarks: "", created_at: Date.now(), demo: true },
+    { id: uid("sm_"), item_id: stockItems[3].id, type: "OUT", quantity: 1, date: today, time: "11:00:00", recorded_by: "Amir Hamja", remarks: "", created_at: Date.now(), demo: true },
+  ];
+
   const settings = {
     ...defaultSettings(),
   };
-  return { users, employees, attendance, audit, leaves: [], settings };
+  return { users, employees, attendance, audit, leaves: [], visitors, stockItems, stockMovements, settings };
 }
 
 /* ---------------------------------------------------------------------
@@ -610,7 +718,10 @@ function App() {
   const [attendance, setAttendance] = useState([]);
   const [audit, setAudit] = useState([]);
   const [leaves, setLeaves] = useState([]);
-  const [settings, setSettings] = useState({ shift_hours: 9, report_delivery: { enabled: false, recipient_name: "", recipient_email: "", frequency: "daily", time: "18:00", last_sent: null } });
+  const [visitors, setVisitors] = useState([]);
+  const [stockItems, setStockItems] = useState([]);
+  const [stockMovements, setStockMovements] = useState([]);
+  const [settings, setSettings] = useState(defaultSettings());
   const [session, setSession] = useState(null); // {id,name,role}
   const [view, setView] = useState("dashboard");
   const [toast, setToast] = useState(null);
@@ -625,6 +736,9 @@ function App() {
   const attendanceRef = useRef(attendance); attendanceRef.current = attendance;
   const auditRef = useRef(audit); auditRef.current = audit;
   const leavesRef = useRef(leaves); leavesRef.current = leaves;
+  const visitorsRef = useRef(visitors); visitorsRef.current = visitors;
+  const stockItemsRef = useRef(stockItems); stockItemsRef.current = stockItems;
+  const stockMovementsRef = useRef(stockMovements); stockMovementsRef.current = stockMovements;
 
   const notify = useCallback((msg, type = "ok") => {
     setToast({ msg, type });
@@ -639,6 +753,9 @@ function App() {
     let att = await loadKey(KEYS.attendance, null);
     let aud = await loadKey(KEYS.audit, null);
     let lv = await loadKey(KEYS.leaves, null);
+    let vis = await loadKey(KEYS.visitors, null);
+    let si = await loadKey(KEYS.stockItems, null);
+    let sm = await loadKey(KEYS.stockMovements, null);
     let set = await loadKey(KEYS.settings, null);
     if (!usr || !Array.isArray(usr) || usr.length === 0) {
       const fresh = await buildFreshData();
@@ -647,15 +764,20 @@ function App() {
       att = att && Array.isArray(att) ? att : fresh.attendance;
       aud = aud && Array.isArray(aud) ? aud : fresh.audit;
       lv = lv && Array.isArray(lv) ? lv : fresh.leaves;
+      vis = vis && Array.isArray(vis) ? vis : fresh.visitors;
+      si = si && Array.isArray(si) ? si : fresh.stockItems;
+      sm = sm && Array.isArray(sm) ? sm : fresh.stockMovements;
       set = set || fresh.settings;
       await Promise.all([
         saveKey(KEYS.employees, emp), saveKey(KEYS.users, usr), saveKey(KEYS.attendance, att),
-        saveKey(KEYS.audit, aud), saveKey(KEYS.leaves, lv), saveKey(KEYS.settings, set),
+        saveKey(KEYS.audit, aud), saveKey(KEYS.leaves, lv), saveKey(KEYS.visitors, vis),
+        saveKey(KEYS.stockItems, si), saveKey(KEYS.stockMovements, sm), saveKey(KEYS.settings, set),
       ]);
     }
     setEmployees(emp || []); setUsers(usr || []); setAttendance(att || []);
     setAudit(aud || []); setLeaves(lv || []);
-    setSettings({ ...defaultSettings(), ...(set || {}) });
+    setVisitors(vis || []); setStockItems(si || []); setStockMovements(sm || []);
+    setSettings(migrateSettings(set));
     setSyncMode("local");
     setBooted(true);
   }, []);
@@ -736,10 +858,22 @@ function App() {
         if (!cancelled) setLeaves(snap.docs.map((d) => d.data()));
       }, (err) => console.error("leaves sync error", err)));
 
+      unsubs.push(db.collection("visitors").onSnapshot((snap) => {
+        if (!cancelled) setVisitors(snap.docs.map((d) => d.data()));
+      }, (err) => console.error("visitors sync error", err)));
+
+      unsubs.push(db.collection("stockItems").onSnapshot((snap) => {
+        if (!cancelled) setStockItems(snap.docs.map((d) => d.data()));
+      }, (err) => console.error("stockItems sync error", err)));
+
+      unsubs.push(db.collection("stockMovements").onSnapshot((snap) => {
+        if (!cancelled) setStockMovements(snap.docs.map((d) => d.data()));
+      }, (err) => console.error("stockMovements sync error", err)));
+
       unsubs.push(db.doc("config/app").onSnapshot((snap) => {
         if (cancelled) return;
         const data = snap.exists ? snap.data() : null;
-        setSettings({ ...defaultSettings(), ...(data || {}) });
+        setSettings(migrateSettings(data));
         if (!snap.exists) {
           // first run: write the defaults so later readers see them too
           db.doc("config/app").set(defaultSettings()).catch((e) => console.error("settings seed failed", e));
@@ -780,6 +914,24 @@ function App() {
       if (db) await syncArrayToCollection(db, "leaves", leavesRef.current, next);
       else await saveKey(KEYS.leaves, next);
     },
+    visitors: async (next) => {
+      setVisitors(next);
+      const db = dbApiRef.current;
+      if (db) await syncArrayToCollection(db, "visitors", visitorsRef.current, next);
+      else await saveKey(KEYS.visitors, next);
+    },
+    stockItems: async (next) => {
+      setStockItems(next);
+      const db = dbApiRef.current;
+      if (db) await syncArrayToCollection(db, "stockItems", stockItemsRef.current, next);
+      else await saveKey(KEYS.stockItems, next);
+    },
+    stockMovements: async (next) => {
+      setStockMovements(next);
+      const db = dbApiRef.current;
+      if (db) await syncArrayToCollection(db, "stockMovements", stockMovementsRef.current, next);
+      else await saveKey(KEYS.stockMovements, next);
+    },
     settings: async (next) => {
       setSettings(next);
       const db = dbApiRef.current;
@@ -796,19 +948,26 @@ function App() {
   const empById = useMemo(() => Object.fromEntries(employees.map((e) => [e.id, e])), [employees]);
   const today = todayStr();
 
-  const sendReport = useCallback(async (freq) => {
-    const rd = settings.report_delivery || {};
-    if (!rd.recipient_email) { notify("Add the manager's email in Settings → Report Delivery first", "error"); return; }
-    const payload = buildReportPayload(freq, employees, attendance, empById, settings);
+  const sendReport = useCallback(async (section, freq) => {
+    const channels = settings.report_channels || { attendance: defaultChannel(), security: defaultChannel(), inventory: defaultChannel() };
+    const ch = channels[section] || defaultChannel();
+    const sectionLabel = { attendance: "Attendance", security: "Security", inventory: "Inventory" }[section] || section;
+    if (!ch.recipient_email) { notify(`Add the recipient's email for ${sectionLabel} reports in Settings first`, "error"); return; }
+
+    let payload;
+    if (section === "attendance") payload = buildReportPayload(freq, employees, attendance, empById, settings);
+    else if (section === "security") payload = buildSecurityReportPayload(freq, visitors);
+    else payload = buildInventoryReportPayload(freq, stockItems, stockMovements);
+
     downloadFile(payload.filename, payload.csv, "text/csv");
     const body = payload.body + "\n\n(A CSV of the full period was just downloaded to your device — attach it to this email before sending.)";
-    const mailto = `mailto:${encodeURIComponent(rd.recipient_email)}?subject=${encodeURIComponent(payload.subject)}&body=${encodeURIComponent(body)}`;
+    const mailto = `mailto:${encodeURIComponent(ch.recipient_email)}?subject=${encodeURIComponent(payload.subject)}&body=${encodeURIComponent(body)}`;
     const a = document.createElement("a");
     a.href = mailto; a.target = "_blank";
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    await persist.settings({ ...settings, report_delivery: { ...rd, last_sent: todayStr() } });
-    notify(`${payload.label} report ready — check your email app`);
-  }, [settings, employees, attendance, empById, notify]);
+    await persist.settings({ ...settings, report_channels: { ...channels, [section]: { ...ch, last_sent: todayStr() } } });
+    notify(`${payload.label} ${sectionLabel.toLowerCase()} report ready — check your email app`);
+  }, [settings, employees, attendance, empById, visitors, stockItems, stockMovements, notify]);
 
   if (!booted) {
     return (
@@ -845,6 +1004,7 @@ function App() {
           <Dashboard
             session={session} employees={employees} attendance={attendance} settings={settings}
             empById={empById} today={today} goto={setView} sendReport={sendReport} leaves={leaves}
+            stockItems={stockItems} stockMovements={stockMovements} visitors={visitors}
           />
         )}
         {view === "checkin" && (
@@ -874,6 +1034,13 @@ function App() {
           <LeaveScreen session={session} employees={employees} empById={empById} leaves={leaves}
             persistLeaves={persist.leaves} notify={notify} />
         )}
+        {view === "visitors" && (
+          <VisitorsScreen session={session} visitors={visitors} persistVisitors={persist.visitors} notify={notify} today={today} />
+        )}
+        {view === "inventory" && (
+          <InventoryScreen session={session} stockItems={stockItems} stockMovements={stockMovements}
+            persistStockItems={persist.stockItems} persistStockMovements={persist.stockMovements} notify={notify} />
+        )}
         {view === "employees" && session.role === "admin" && (
           <EmployeesScreen employees={employees} persistEmployees={persist.employees} notify={notify} />
         )}
@@ -888,7 +1055,9 @@ function App() {
               const sample = await buildSampleData();
               await persist.employees(sample.employees); await persist.users(sample.users);
               await persist.attendance(sample.attendance); await persist.audit(sample.audit);
-              await persist.leaves(sample.leaves); await persist.settings(sample.settings);
+              await persist.leaves(sample.leaves); await persist.visitors(sample.visitors);
+              await persist.stockItems(sample.stockItems); await persist.stockMovements(sample.stockMovements);
+              await persist.settings(sample.settings);
               setBusy(false);
               notify("Sample data loaded");
             }}
@@ -897,7 +1066,9 @@ function App() {
               const fresh = await buildFreshData();
               await persist.employees(fresh.employees); await persist.users(fresh.users);
               await persist.attendance(fresh.attendance); await persist.audit(fresh.audit);
-              await persist.leaves(fresh.leaves); await persist.settings(fresh.settings);
+              await persist.leaves(fresh.leaves); await persist.visitors(fresh.visitors);
+              await persist.stockItems(fresh.stockItems); await persist.stockMovements(fresh.stockMovements);
+              await persist.settings(fresh.settings);
               setBusy(false);
               notify("All data erased — starting fresh");
             }}
@@ -951,6 +1122,8 @@ function BottomNav({ view, setView, role }) {
     { id: "attendance", label: "Today", icon: ClipboardList, roles: ["admin", "guard"] },
     { id: "history", label: "History", icon: CalendarDays, roles: ["admin", "guard"] },
     { id: "leave", label: "Leave", icon: UserX, roles: ["admin", "guard"] },
+    { id: "visitors", label: "Visitors", icon: UserPlus, roles: ["admin", "guard"] },
+    { id: "inventory", label: "Inventory", icon: Package, roles: ["admin", "guard"] },
     { id: "employees", label: "Employees", icon: Users, roles: ["admin"] },
     { id: "reports", label: "Reports", icon: BarChart3, roles: ["admin"] },
     { id: "settings", label: "Settings", icon: SettingsIcon, roles: ["admin"] },
@@ -1167,7 +1340,7 @@ function LoginScreen({ users, onLogin, notify, onResetAccounts }) {
 /* ---------------------------------------------------------------------
    DASHBOARD
 --------------------------------------------------------------------- */
-function Dashboard({ session, employees, attendance, settings, empById, today, goto, sendReport, leaves }) {
+function Dashboard({ session, employees, attendance, settings, empById, today, goto, sendReport, leaves, stockItems, stockMovements, visitors }) {
   const todays = attendance.filter((a) => a.date === today);
   const inside = todays.filter((a) => a.status === "INSIDE");
   const checkedOutToday = todays.filter((a) => a.status === "CHECKED_OUT");
@@ -1181,25 +1354,47 @@ function Dashboard({ session, employees, attendance, settings, empById, today, g
     if (a.status === "INSIDE") return elapsedMinutes(a.date, a.time_in) > shiftHours * 60;
     return overtimeMinutes(a.total_minutes, shiftHours) > 0;
   });
-  const rd = settings.report_delivery;
-  const due = session.role === "admin" && isReportDue(rd);
+  const visitorsInside = (visitors || []).filter((v) => v.status === "INSIDE");
+  const lowStockItems = (stockItems || []).filter((i) => i.active).map((i) => ({ ...i, level: stockLevel(i.id, stockMovements || []) })).filter((i) => i.level <= i.min_threshold);
+
+  const channels = settings.report_channels || { attendance: defaultChannel(), security: defaultChannel(), inventory: defaultChannel() };
+  const dueSections = session.role === "admin"
+    ? ["attendance", "security", "inventory"].filter((s) => isReportDue(channels[s]))
+    : [];
+  const sectionLabel = { attendance: "Attendance", security: "Security", inventory: "Inventory" };
 
   return (
     <div>
       <SectionTitle title="Today's Dashboard" sub={fmtDate(today)} />
 
-      {due && (
-        <div style={{ background: "#FCEFE0", border: `1px solid #F2D6A6`, borderRadius: 10, padding: "12px 14px", marginBottom: 18, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <AlertTriangle size={18} color={C.amberDeep} />
-            <div>
-              <div style={{ fontWeight: 700, fontSize: 13.5, color: C.ink }}>
-                {rd.frequency[0].toUpperCase() + rd.frequency.slice(1)} report due to {rd.recipient_name || rd.recipient_email}
+      {dueSections.map((s) => {
+        const ch = channels[s];
+        return (
+          <div key={s} style={{ background: "#FCEFE0", border: `1px solid #F2D6A6`, borderRadius: 10, padding: "12px 14px", marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <AlertTriangle size={18} color={C.amberDeep} />
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 13.5, color: C.ink }}>
+                  {sectionLabel[s]}: {ch.frequency[0].toUpperCase() + ch.frequency.slice(1)} report due to {ch.recipient_name || ch.recipient_email}
+                </div>
+                <div style={{ fontSize: 12, color: C.ink50 }}>Opens your email app with the report — you attach and send.</div>
               </div>
-              <div style={{ fontSize: 12, color: C.ink50 }}>Opens your email app with the report — you attach and send.</div>
+            </div>
+            <Btn size="sm" tone="amber" onClick={() => sendReport(s, ch.frequency)}>Send Report</Btn>
+          </div>
+        );
+      })}
+
+      {lowStockItems.length > 0 && (
+        <div style={{ background: "#F7E7E5", border: `1px solid #E9C3BE`, borderRadius: 10, padding: "12px 14px", marginBottom: 18, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <Package size={18} color={C.redDeep} />
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 13.5, color: C.redDeep }}>{lowStockItems.length} item(s) low on stock — reorder needed</div>
+              <div style={{ fontSize: 12, color: C.ink50 }}>{lowStockItems.map((i) => i.name).join(", ")}</div>
             </div>
           </div>
-          <Btn size="sm" tone="amber" onClick={() => sendReport(rd.frequency)}>Send Report</Btn>
+          <Btn size="sm" tone="red" onClick={() => goto("inventory")}>View Inventory</Btn>
         </div>
       )}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 10, marginBottom: 22 }}>
@@ -1210,6 +1405,8 @@ function Dashboard({ session, employees, attendance, settings, empById, today, g
         <StatCard label="Not Checked In" value={notCheckedIn.length} icon={XCircle} tone="red" />
         <StatCard label="On Leave Today" value={onLeaveToday.length} icon={UserX} tone="slate" />
         <StatCard label="In Overtime" value={overtimeToday.length} icon={AlertTriangle} tone="amber" />
+        <StatCard label="Visitors/Contractors Inside" value={visitorsInside.length} icon={UserPlus} tone="navy" />
+        <StatCard label="Low Stock Items" value={lowStockItems.length} icon={Package} tone={lowStockItems.length ? "red" : "slate"} />
       </div>
 
       <SectionTitle title="Currently Inside" sub={`${inside.length} on site`} />
@@ -1865,6 +2062,353 @@ function CorrectionModal({ record, onClose, attendance, persistAttendance, audit
 --------------------------------------------------------------------- */
 const LEAVE_TYPES = ["Annual Leave", "Sick Leave", "Absent", "Other"];
 
+/* ---------------------------------------------------------------------
+   VISITORS & CONTRACTORS
+   Same gate-pass flow for both: log them in with a pass number and who
+   they're there to see, check them out when they leave. Deliberately does
+   NOT store the Emirates ID number itself — just whether it was collected
+   at the gate, which is the safer thing for a client-side app to keep.
+--------------------------------------------------------------------- */
+function VisitorsScreen({ session, visitors, persistVisitors, notify, today }) {
+  const [tab, setTab] = useState("inside");
+  const [showForm, setShowForm] = useState(false);
+  const [q, setQ] = useState("");
+
+  const inside = visitors.filter((v) => v.status === "INSIDE");
+  const sorted = useMemo(() => [...visitors].sort((a, b) => (b.date + b.time_in).localeCompare(a.date + a.time_in)), [visitors]);
+
+  const filteredHistory = useMemo(() => {
+    if (!q.trim()) return sorted.slice(0, 100);
+    const t = q.toLowerCase();
+    return sorted.filter((v) => v.name.toLowerCase().includes(t) || (v.pass_number || "").toLowerCase().includes(t) || (v.company || "").toLowerCase().includes(t)).slice(0, 100);
+  }, [sorted, q]);
+
+  const logIn = async (data) => {
+    const now = new Date();
+    const rec = {
+      id: uid("v_"), ...data, date: todayStr(now), time_in: nowTimeStr(now), time_out: null,
+      status: "INSIDE", checked_in_by: session.name, checked_out_by: null, created_at: Date.now(), updated_at: Date.now(),
+    };
+    await persistVisitors([rec, ...visitors]);
+    notify(`${data.name} logged in`);
+    setShowForm(false);
+  };
+
+  const checkOut = async (v) => {
+    const now = new Date();
+    const updated = { ...v, time_out: nowTimeStr(now), status: "CHECKED_OUT", checked_out_by: session.name, updated_at: Date.now() };
+    await persistVisitors(visitors.map((x) => (x.id === v.id ? updated : x)));
+    notify(`${v.name} checked out`);
+  };
+
+  return (
+    <div>
+      <SectionTitle title="Visitors & Contractors" sub={`${inside.length} currently inside`} action={{ label: "+ Log In", onClick: () => setShowForm(true) }} />
+
+      <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+        {[["inside", `Inside (${inside.length})`], ["history", "History"]].map(([k, label]) => (
+          <button key={k} onClick={() => setTab(k)} style={{
+            padding: "7px 12px", borderRadius: 20, fontSize: 12.5, fontWeight: 600, cursor: "pointer",
+            border: `1px solid ${tab === k ? C.navy : C.line}`, background: tab === k ? C.navy : "#fff", color: tab === k ? "#fff" : C.ink,
+          }}>{label}</button>
+        ))}
+      </div>
+
+      {tab === "history" && (
+        <div style={{ position: "relative", marginBottom: 10 }}>
+          <Search size={15} style={{ position: "absolute", left: 10, top: 11, color: C.ink50 }} />
+          <input style={{ ...inputStyle, paddingLeft: 32 }} placeholder="Search name, pass number, company…" value={q} onChange={(e) => setQ(e.target.value)} />
+        </div>
+      )}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {(tab === "inside" ? inside : filteredHistory).length === 0 ? (
+          <EmptyState icon={UserPlus} title={tab === "inside" ? "No visitors or contractors currently inside" : "No records found"} />
+        ) : (
+          (tab === "inside" ? inside : filteredHistory).map((v) => (
+            <div key={v.id} style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, padding: "12px 14px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+                    <span style={{ fontWeight: 600, fontSize: 14.5, color: C.ink }}>{v.name}</span>
+                    <Badge tone={v.type === "Contractor" ? "overtime" : "neutral"}>{v.type.toUpperCase()}</Badge>
+                    {v.status === "INSIDE" ? <Badge tone="inside">INSIDE</Badge> : <Badge tone="out">CHECKED OUT</Badge>}
+                  </div>
+                  <div style={{ fontSize: 12.5, color: C.ink50, marginTop: 3 }}>
+                    {v.company && <>{v.company} · </>}{v.purpose}
+                  </div>
+                  <div style={{ fontSize: 12, color: C.ink50, marginTop: 2 }}>
+                    To see: {v.host_name || "—"} {v.department ? `(${v.department})` : ""}
+                  </div>
+                  <div style={{ fontFamily: FONT_MONO, fontSize: 11.5, color: C.navy, marginTop: 4 }}>
+                    Pass {v.pass_number || "—"} · {v.phone || "—"}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: C.ink50, marginTop: 3 }}>
+                    IN {fmtTime(v.time_in)}{v.time_out ? ` · OUT ${fmtTime(v.time_out)}` : ""} · {fmtDate(v.date)}
+                    {v.id_collected && <> · ID collected</>}
+                  </div>
+                  {v.remarks && <div style={{ fontSize: 11.5, color: C.ink50, marginTop: 3 }}>Note: {v.remarks}</div>}
+                </div>
+                {v.status === "INSIDE" && (
+                  <Btn size="sm" tone="red" icon={DoorClosed} onClick={() => checkOut(v)}>Check Out</Btn>
+                )}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {showForm && <VisitorForm onClose={() => setShowForm(false)} onSave={logIn} />}
+    </div>
+  );
+}
+
+function VisitorForm({ onClose, onSave }) {
+  const [type, setType] = useState("Visitor");
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [company, setCompany] = useState("");
+  const [purpose, setPurpose] = useState("");
+  const [department, setDepartment] = useState("");
+  const [hostName, setHostName] = useState("");
+  const [passNumber, setPassNumber] = useState("");
+  const [idCollected, setIdCollected] = useState(false);
+  const [remarks, setRemarks] = useState("");
+
+  const save = () => {
+    if (!name.trim()) return;
+    onSave({
+      type, name: name.trim(), phone: phone.trim(), company: company.trim(), purpose: purpose.trim(),
+      department: department.trim(), host_name: hostName.trim(), pass_number: passNumber.trim(),
+      id_collected: idCollected, remarks: remarks.trim(),
+    });
+  };
+
+  return (
+    <Modal title="Log Visitor / Contractor" onClose={onClose} wide>
+      <Field label="Type">
+        <div style={{ display: "flex", gap: 6 }}>
+          {["Visitor", "Contractor"].map((t) => (
+            <button key={t} type="button" onClick={() => setType(t)} style={{
+              flex: 1, padding: "9px 10px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer",
+              border: `1px solid ${type === t ? C.navy : C.line}`, background: type === t ? C.navy : "#fff", color: type === t ? "#fff" : C.ink,
+            }}>{t}</button>
+          ))}
+        </div>
+      </Field>
+      <Field label="Full Name"><input autoFocus style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} /></Field>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <Field label="Phone Number"><input style={inputStyle} value={phone} onChange={(e) => setPhone(e.target.value)} /></Field>
+        <Field label="Company"><input style={inputStyle} value={company} onChange={(e) => setCompany(e.target.value)} /></Field>
+      </div>
+      <Field label={type === "Contractor" ? "Work Description" : "Purpose of Visit"}>
+        <input style={inputStyle} value={purpose} onChange={(e) => setPurpose(e.target.value)} placeholder={type === "Contractor" ? "e.g. AC maintenance" : "e.g. delivery, meeting"} />
+      </Field>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <Field label="Department / Area"><input style={inputStyle} value={department} onChange={(e) => setDepartment(e.target.value)} /></Field>
+        <Field label="Host / Contact Person"><input style={inputStyle} value={hostName} onChange={(e) => setHostName(e.target.value)} /></Field>
+      </div>
+      <Field label="Gate Pass Number"><input style={inputStyle} value={passNumber} onChange={(e) => setPassNumber(e.target.value)} placeholder="e.g. VP-1001" /></Field>
+      <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, cursor: "pointer" }}>
+        <input type="checkbox" checked={idCollected} onChange={(e) => setIdCollected(e.target.checked)} />
+        <span style={{ fontSize: 13.5 }}>Emirates ID collected at gate</span>
+      </label>
+      <Field label="Remarks (optional)"><input style={inputStyle} value={remarks} onChange={(e) => setRemarks(e.target.value)} /></Field>
+      <Btn full tone="green" icon={DoorOpen} onClick={save} disabled={!name.trim()}>Log In</Btn>
+    </Modal>
+  );
+}
+
+/* ---------------------------------------------------------------------
+   INVENTORY — goods in/out through the chamber (tea, sugar, tags,
+   wrapping materials, etc.), with a per-item reorder threshold so low
+   stock surfaces on the dashboard instead of being discovered too late.
+--------------------------------------------------------------------- */
+function InventoryScreen({ session, stockItems, stockMovements, persistStockItems, persistStockMovements, notify }) {
+  const [tab, setTab] = useState("items");
+  const [showItemForm, setShowItemForm] = useState(false);
+  const [showMoveForm, setShowMoveForm] = useState(null); // null | {item, type}
+  const [editingItem, setEditingItem] = useState(null);
+
+  const activeItems = stockItems.filter((i) => i.active);
+  const withLevels = activeItems.map((i) => ({ ...i, level: stockLevel(i.id, stockMovements) }));
+  const lowStock = withLevels.filter((i) => i.level <= i.min_threshold);
+  const recentMoves = useMemo(() => [...stockMovements].sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time)).slice(0, 50), [stockMovements]);
+  const itemById = useMemo(() => Object.fromEntries(stockItems.map((i) => [i.id, i])), [stockItems]);
+
+  const addItem = async (data) => {
+    await persistStockItems([{ id: uid("si_"), ...data, active: true, created_at: Date.now() }, ...stockItems]);
+    notify(`${data.name} added`);
+    setShowItemForm(false);
+  };
+  const saveItem = async (data) => {
+    await persistStockItems(stockItems.map((i) => (i.id === editingItem.id ? { ...i, ...data } : i)));
+    notify("Item updated");
+    setEditingItem(null);
+  };
+  const toggleItemActive = async (item) => {
+    await persistStockItems(stockItems.map((i) => (i.id === item.id ? { ...i, active: !i.active } : i)));
+  };
+  const logMovement = async (data) => {
+    const now = new Date();
+    const rec = { id: uid("sm_"), ...data, date: todayStr(now), time: nowTimeStr(now), recorded_by: session.name, created_at: Date.now() };
+    await persistStockMovements([rec, ...stockMovements]);
+    notify(`${data.type === "IN" ? "Stock in" : "Stock out"} recorded`);
+    setShowMoveForm(null);
+  };
+
+  return (
+    <div>
+      <SectionTitle title="Inventory" sub={`${activeItems.length} item(s) tracked${lowStock.length ? ` · ${lowStock.length} low` : ""}`}
+        action={session.role === "admin" ? { label: "+ Add Item", onClick: () => setShowItemForm(true) } : undefined} />
+
+      {lowStock.length > 0 && (
+        <div style={{ background: "#F7E7E5", border: `1px solid #E9C3BE`, borderRadius: 10, padding: "12px 14px", marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+            <AlertTriangle size={16} color={C.redDeep} />
+            <span style={{ fontWeight: 700, fontSize: 13.5, color: C.redDeep }}>Low stock — reorder needed</span>
+          </div>
+          {lowStock.map((i) => (
+            <div key={i.id} style={{ fontSize: 12.5, color: C.redDeep, padding: "2px 0" }}>
+              {i.name}: {i.level} {i.unit} left (minimum {i.min_threshold})
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+        {[["items", "Items"], ["history", "Movement History"]].map(([k, label]) => (
+          <button key={k} onClick={() => setTab(k)} style={{
+            padding: "7px 12px", borderRadius: 20, fontSize: 12.5, fontWeight: 600, cursor: "pointer",
+            border: `1px solid ${tab === k ? C.navy : C.line}`, background: tab === k ? C.navy : "#fff", color: tab === k ? "#fff" : C.ink,
+          }}>{label}</button>
+        ))}
+      </div>
+
+      {tab === "items" ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {withLevels.length === 0 ? <EmptyState icon={Package} title="No inventory items yet" sub={session.role === "admin" ? "Tap + Add Item to start tracking stock" : "Ask admin to add items to track"} /> : (
+            withLevels.sort((a, b) => (a.level <= a.min_threshold ? -1 : 1) - (b.level <= b.min_threshold ? -1 : 1)).map((i) => (
+              <div key={i.id} style={{ background: "#fff", border: `1px solid ${i.level <= i.min_threshold ? "#E9C3BE" : C.line}`, borderRadius: 10, padding: "12px 14px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                      <span style={{ fontWeight: 600, fontSize: 14.5, color: C.ink }}>{i.name}</span>
+                      {i.level <= i.min_threshold && <Badge tone="missing">LOW STOCK</Badge>}
+                    </div>
+                    <div style={{ fontSize: 13, color: C.ink50, marginTop: 3 }}>
+                      <span style={{ fontFamily: FONT_MONO, color: C.ink, fontWeight: 600 }}>{i.level} {i.unit}</span> on hand · minimum {i.min_threshold} {i.unit}
+                    </div>
+                  </div>
+                  {session.role === "admin" && (
+                    <button onClick={() => setEditingItem(i)} style={{ background: "none", border: "none", color: C.navy, cursor: "pointer" }}><Edit3 size={15} /></button>
+                  )}
+                </div>
+                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                  <Btn size="sm" tone="green" icon={DoorOpen} onClick={() => setShowMoveForm({ item: i, type: "IN" })}>Stock In</Btn>
+                  <Btn size="sm" tone="red" icon={DoorClosed} onClick={() => setShowMoveForm({ item: i, type: "OUT" })}>Stock Out</Btn>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      ) : (
+        <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, overflow: "hidden" }}>
+          {recentMoves.length === 0 ? <EmptyState icon={ClipboardList} title="No movements recorded yet" /> : (
+            <TableScroll headers={["Date", "Item", "Type", "Qty", "Person", "Company", "Recorded By"]}>
+              {recentMoves.map((m) => {
+                const item = itemById[m.item_id];
+                return (
+                  <tr key={m.id}>
+                    <Td>{m.date} {fmtTime(m.time)}</Td>
+                    <Td>{item ? item.name : "—"}</Td>
+                    <Td><Badge tone={m.type === "IN" ? "inside" : "out"}>{m.type}</Badge></Td>
+                    <Td>{m.quantity} {item ? item.unit : ""}</Td>
+                    <Td>{m.person_name || "—"}{m.phone ? ` · ${m.phone}` : ""}</Td>
+                    <Td>{m.company || "—"}</Td>
+                    <Td>{m.recorded_by}</Td>
+                  </tr>
+                );
+              })}
+            </TableScroll>
+          )}
+        </div>
+      )}
+
+      {showItemForm && <StockItemForm onClose={() => setShowItemForm(false)} onSave={addItem} />}
+      {editingItem && (
+        <StockItemForm item={editingItem} onClose={() => setEditingItem(null)} onSave={saveItem}
+          onToggleActive={() => { toggleItemActive(editingItem); setEditingItem(null); }} />
+      )}
+      {showMoveForm && (
+        <StockMovementForm item={showMoveForm.item} type={showMoveForm.type} onClose={() => setShowMoveForm(null)} onSave={logMovement} />
+      )}
+    </div>
+  );
+}
+
+function StockItemForm({ item, onClose, onSave, onToggleActive }) {
+  const isNew = !item;
+  const [name, setName] = useState(item?.name || "");
+  const [unit, setUnit] = useState(item?.unit || "pcs");
+  const [minThreshold, setMinThreshold] = useState(item?.min_threshold ?? 5);
+
+  const save = () => {
+    if (!name.trim()) return;
+    onSave({ name: name.trim(), unit: unit.trim() || "pcs", min_threshold: Number(minThreshold) || 0 });
+  };
+
+  return (
+    <Modal title={isNew ? "Add Inventory Item" : "Edit Inventory Item"} onClose={onClose}>
+      <Field label="Item Name"><input autoFocus style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Tea, Shipping Tags" /></Field>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <Field label="Unit"><input style={inputStyle} value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="boxes, kg, rolls…" /></Field>
+        <Field label="Reorder Threshold"><input type="number" min="0" style={inputStyle} value={minThreshold} onChange={(e) => setMinThreshold(e.target.value)} /></Field>
+      </div>
+      <p style={{ fontSize: 12, color: C.ink50, marginTop: -4, marginBottom: 14 }}>You'll get a low-stock warning once the item's quantity on hand falls to or below this number.</p>
+      <Btn full tone="navy" onClick={save} disabled={!name.trim()}>{isNew ? "Add Item" : "Save Changes"}</Btn>
+      {!isNew && (
+        <div style={{ marginTop: 10 }}>
+          <Btn full tone={item.active ? "red" : "green"} onClick={onToggleActive}>{item.active ? "Deactivate Item" : "Reactivate Item"}</Btn>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+function StockMovementForm({ item, type, onClose, onSave }) {
+  const [quantity, setQuantity] = useState("");
+  const [personName, setPersonName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [company, setCompany] = useState("");
+  const [idCard, setIdCard] = useState("");
+  const [remarks, setRemarks] = useState("");
+
+  const save = () => {
+    const q = Number(quantity);
+    if (!q || q <= 0) return;
+    onSave({ item_id: item.id, type, quantity: q, person_name: personName.trim(), phone: phone.trim(), company: company.trim(), id_card_number: idCard.trim(), remarks: remarks.trim() });
+  };
+
+  return (
+    <Modal title={`${type === "IN" ? "Stock In" : "Stock Out"} — ${item.name}`} onClose={onClose}>
+      <Field label={`Quantity (${item.unit})`}>
+        <input autoFocus type="number" min="1" style={inputStyle} value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+      </Field>
+      <Field label={type === "IN" ? "Delivered By (person's name)" : "Collected By (person's name)"}>
+        <input style={inputStyle} value={personName} onChange={(e) => setPersonName(e.target.value)} />
+      </Field>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <Field label="Phone (optional)"><input style={inputStyle} value={phone} onChange={(e) => setPhone(e.target.value)} /></Field>
+        <Field label={type === "IN" ? "Company / Supplier" : "Department"}><input style={inputStyle} value={company} onChange={(e) => setCompany(e.target.value)} /></Field>
+      </div>
+      <Field label="ID / Card Number (optional)"><input style={inputStyle} value={idCard} onChange={(e) => setIdCard(e.target.value)} placeholder="whatever ID the gate records, if any" /></Field>
+      <Field label="Remarks (optional)"><input style={inputStyle} value={remarks} onChange={(e) => setRemarks(e.target.value)} /></Field>
+      <Btn full tone={type === "IN" ? "green" : "red"} onClick={save} disabled={!Number(quantity)}>Record {type === "IN" ? "Stock In" : "Stock Out"}</Btn>
+    </Modal>
+  );
+}
+
 function LeaveScreen({ session, employees, empById, leaves, persistLeaves, notify }) {
   const [showForm, setShowForm] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
@@ -2377,8 +2921,8 @@ function SettingsScreen({ settings, persistSettings, users, persistUsers, notify
   const [newUser, setNewUser] = useState({ name: "", username: "", password: "", role: "guard" });
   const [confirmSample, setConfirmSample] = useState(false);
   const [confirmErase, setConfirmErase] = useState(false);
-  const rd0 = settings.report_delivery || { enabled: false, recipient_name: "", recipient_email: "", frequency: "daily", time: "18:00", last_sent: null };
-  const [rd, setRd] = useState(rd0);
+  const channels0 = settings.report_channels || { attendance: defaultChannel(), security: defaultChannel(), inventory: defaultChannel() };
+  const [channels, setChannels] = useState(channels0);
   const savedFbConfig = getSavedFirebaseConfig();
   const [fbForm, setFbForm] = useState(savedFbConfig || { apiKey: "", authDomain: "", projectId: "", storageBucket: "", messagingSenderId: "", appId: "" });
   const [fbSaved, setFbSaved] = useState(false);
@@ -2415,11 +2959,13 @@ function SettingsScreen({ settings, persistSettings, users, persistUsers, notify
     notify("Settings saved");
   };
 
-  const saveReportDelivery = async () => {
-    if (rd.enabled && !rd.recipient_email.trim()) { notify("Enter the manager's email address", "error"); return; }
-    await persistSettings({ ...settings, report_delivery: rd });
-    notify("Report delivery settings saved");
+  const saveChannel = async (section) => {
+    const ch = channels[section];
+    if (ch.enabled && !ch.recipient_email.trim()) { notify("Enter the recipient's email address", "error"); return; }
+    await persistSettings({ ...settings, report_channels: channels });
+    notify("Report settings saved");
   };
+  const updateChannel = (section, patch) => setChannels((c) => ({ ...c, [section]: { ...c[section], ...patch } }));
 
   const addUser = async () => {
     if (!newUser.name.trim() || !newUser.username.trim() || newUser.password.length < 4) {
@@ -2561,32 +3107,40 @@ function SettingsScreen({ settings, persistSettings, users, persistUsers, notify
 
       <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, padding: 16, marginBottom: 16 }}>
         <h3 style={{ fontFamily: FONT_SERIF, fontSize: 16, margin: "0 0 4px" }}>Report Delivery</h3>
-        <p style={{ fontSize: 12.5, color: C.ink50, margin: "0 0 12px", lineHeight: 1.5 }}>
-          Send the attendance report to a manager daily, weekly, or monthly. Since this app runs in your browser with no
-          background server, it can't send email on its own — instead, whoever opens the app sees a reminder when a report
-          is due, and one tap builds it and opens it in your email app with the CSV ready to attach.
+        <p style={{ fontSize: 12.5, color: C.ink50, margin: "0 0 14px", lineHeight: 1.5 }}>
+          Each section can go to a different manager — e.g. attendance to HR, security to your security manager,
+          inventory to procurement. Since this app has no background server, it can't send email on its own: whoever
+          opens the app sees a reminder when a report is due, and one tap builds it and opens your email app with the
+          CSV ready to attach.
         </p>
-        <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, cursor: "pointer" }}>
-          <input type="checkbox" checked={rd.enabled} onChange={(e) => setRd((r) => ({ ...r, enabled: e.target.checked }))} />
-          <span style={{ fontSize: 13.5, fontWeight: 600 }}>Enable scheduled report reminders</span>
-        </label>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-          <Field label="Manager's name"><input style={inputStyle} value={rd.recipient_name} onChange={(e) => setRd((r) => ({ ...r, recipient_name: e.target.value }))} placeholder="e.g. Mr Shihabuddin" /></Field>
-          <Field label="Manager's email"><input type="email" style={inputStyle} value={rd.recipient_email} onChange={(e) => setRd((r) => ({ ...r, recipient_email: e.target.value }))} placeholder="manager@company.com" /></Field>
-          <Field label="Frequency">
-            <select style={inputStyle} value={rd.frequency} onChange={(e) => setRd((r) => ({ ...r, frequency: e.target.value }))}>
-              <option value="daily">Every day</option><option value="weekly">Every week</option><option value="monthly">Every month</option>
-            </select>
-          </Field>
-          <Field label="Reminder time"><input type="time" style={inputStyle} value={rd.time} onChange={(e) => setRd((r) => ({ ...r, time: e.target.value }))} /></Field>
-        </div>
-        <div style={{ fontSize: 12, color: C.ink50, marginBottom: 12 }}>
-          Last sent: {rd.last_sent ? fmtDate(rd.last_sent) : "never"}
-        </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Btn tone="navy" onClick={saveReportDelivery}>Save Report Settings</Btn>
-          <Btn tone="paper" icon={FileDown} onClick={() => sendReport(rd.frequency)} disabled={!rd.recipient_email.trim()}>Send {rd.frequency} report now</Btn>
-        </div>
+        {["attendance", "security", "inventory"].map((section) => {
+          const ch = channels[section];
+          const label = { attendance: "Attendance", security: "Security (Visitors & Contractors)", inventory: "Inventory" }[section];
+          return (
+            <div key={section} style={{ borderTop: section !== "attendance" ? `1px dashed ${C.line}` : "none", paddingTop: section !== "attendance" ? 14 : 0, marginTop: section !== "attendance" ? 14 : 0 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 8 }}>{label}</div>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, cursor: "pointer" }}>
+                <input type="checkbox" checked={ch.enabled} onChange={(e) => updateChannel(section, { enabled: e.target.checked })} />
+                <span style={{ fontSize: 13 }}>Enable scheduled reminders for this section</span>
+              </label>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <Field label="Recipient's name"><input style={inputStyle} value={ch.recipient_name} onChange={(e) => updateChannel(section, { recipient_name: e.target.value })} /></Field>
+                <Field label="Recipient's email"><input type="email" style={inputStyle} value={ch.recipient_email} onChange={(e) => updateChannel(section, { recipient_email: e.target.value })} placeholder="manager@company.com" /></Field>
+                <Field label="Frequency">
+                  <select style={inputStyle} value={ch.frequency} onChange={(e) => updateChannel(section, { frequency: e.target.value })}>
+                    <option value="daily">Every day</option><option value="weekly">Every week</option><option value="monthly">Every month</option>
+                  </select>
+                </Field>
+                <Field label="Reminder time"><input type="time" style={inputStyle} value={ch.time} onChange={(e) => updateChannel(section, { time: e.target.value })} /></Field>
+              </div>
+              <div style={{ fontSize: 11.5, color: C.ink50, marginBottom: 10 }}>Last sent: {ch.last_sent ? fmtDate(ch.last_sent) : "never"}</div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <Btn size="sm" tone="navy" onClick={() => saveChannel(section)}>Save</Btn>
+                <Btn size="sm" tone="paper" icon={FileDown} onClick={() => sendReport(section, ch.frequency)} disabled={!ch.recipient_email.trim()}>Send now</Btn>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, padding: 16, marginBottom: 16 }}>
@@ -2661,16 +3215,5 @@ const root = ReactDOM.createRoot(rootEl);
 root.render(<App />);
 
 </script>
-<script>
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", function () {
-    navigator.serviceWorker.register("./sw.js")
-      .catch(function (error) {
-        console.error("Service worker registration failed:", error);
-      });
-  });
-}
-</script>
-
 </body>
 </html>
