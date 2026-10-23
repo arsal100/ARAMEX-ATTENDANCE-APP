@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@400;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  html, body { margin: 0; padding: 0; background: #F5F2EA; }
+  html, body { margin: 0; padding: 0; background: #F8FAFC; }
   #root { min-height: 100vh; }
   #boot-fallback { min-height: 100vh; display: flex; align-items: center; justify-content: center;
     font-family: Inter, system-ui, sans-serif; color: #6B7280; flex-direction: column; gap: 10px; text-align: center; padding: 20px; }
@@ -118,24 +118,25 @@ const Package = (p) => <IconBase {...p}><path d="M21 8l-9-5-9 5v8l9 5 9-5V8z"/><
 
 /* ---------------------------------------------------------------------
    TOKENS
-   Navy/charcoal gatehouse palette with a barrier-amber accent.
-   Monospace is used only for real data labels (IDs, timestamps, badges) —
-   the way a logbook or ID card actually uses it.
+   Bright, vivid dashboard palette — electric blue as the brand/primary
+   color, saturated amber/emerald/red for status. Monospace is used only
+   for real data labels (IDs, timestamps, badges) — the way a logbook or
+   ID card actually uses it.
 --------------------------------------------------------------------- */
 const C = {
-  ink: "#161C24",       // near-black navy, headers
-  navy: "#1E2A38",      // primary surface (dark)
-  slate: "#2C3A4D",     // secondary dark surface
-  paper: "#F5F2EA",     // logbook paper background
-  paperDim: "#EAE6DA",
-  line: "#D8D2C2",
-  amber: "#E3A339",     // barrier amber accent
-  amberDeep: "#B97F1E",
-  green: "#2F7A54",
-  greenDeep: "#1F5B3D",
-  red: "#B3453A",
-  redDeep: "#8C332A",
-  ink50: "#6B7280",
+  ink: "#0F172A",       // near-black slate, headers/text
+  navy: "#2563EB",      // vivid blue — primary brand surface
+  slate: "#1E3A8A",     // deeper blue — secondary dark surface
+  paper: "#F8FAFC",     // clean cool-white background
+  paperDim: "#EEF2FF",  // light indigo-tinted panel background
+  line: "#E2E8F0",      // light slate border
+  amber: "#F59E0B",     // vivid amber accent
+  amberDeep: "#B45309",
+  green: "#10B981",     // emerald
+  greenDeep: "#047857",
+  red: "#EF4444",
+  redDeep: "#B91C1C",
+  ink50: "#64748B",
 };
 
 const FONT_SERIF = "'Source Serif 4', Georgia, serif";
@@ -180,6 +181,12 @@ function fmtTime(t) {
   const h12 = hh % 12 === 0 ? 12 : hh % 12;
   return `${h12}:${m} ${ampm}`;
 }
+function timeGreeting() {
+  const h = new Date().getHours();
+  if (h < 12) return "Good morning";
+  if (h < 17) return "Good afternoon";
+  return "Good evening";
+}
 function fmtDate(dstr) {
   if (!dstr) return "—";
   const d = new Date(dstr + "T00:00:00");
@@ -210,6 +217,10 @@ function findLeave(leaves, employeeId, dateStr) {
 }
 function stockLevel(itemId, movements) {
   return movements.filter((m) => m.item_id === itemId).reduce((s, m) => s + (m.type === "IN" ? m.quantity : -m.quantity), 0);
+}
+function handoverItemOk(item) {
+  if (item.type === "quantity") return item.actual_quantity != null && item.actual_quantity >= item.expected_quantity;
+  return item.present === true;
 }
 function startOfWeek(d) {
   const dt = new Date(d);
@@ -365,6 +376,7 @@ function buildInventoryReportPayload(freq, stockItems, stockMovements) {
 const KEYS = {
   employees: "employees", users: "users", attendance: "attendance", audit: "auditLogs", settings: "settings", leaves: "leaves",
   visitors: "visitors", stockItems: "stockItems", stockMovements: "stockMovements",
+  handoverItems: "handoverItems", handoverRecords: "handoverRecords",
 };
 async function loadKey(key, fallback) {
   try {
@@ -466,23 +478,40 @@ function defaultSettings() {
   return {
     shift_hours: 9,
     report_channels: { attendance: defaultChannel(), security: defaultChannel(), inventory: defaultChannel() },
+    handover_alert: { recipient_name: "", recipient_email: "" },
   };
 }
 // Older saves had one shared `report_delivery` channel — carry it forward as the
 // attendance channel the first time it's seen, rather than losing that setup.
 function migrateSettings(raw) {
   if (!raw) return defaultSettings();
-  if (raw.report_channels) return raw;
-  if (raw.report_delivery) {
-    const { report_delivery, ...rest } = raw;
-    return { ...rest, report_channels: { attendance: report_delivery, security: defaultChannel(), inventory: defaultChannel() } };
+  let out = raw;
+  if (!out.report_channels) {
+    if (out.report_delivery) {
+      const { report_delivery, ...rest } = out;
+      out = { ...rest, report_channels: { attendance: report_delivery, security: defaultChannel(), inventory: defaultChannel() } };
+    } else {
+      out = { ...defaultSettings(), ...out };
+    }
   }
-  return { ...defaultSettings(), ...raw };
+  if (!out.handover_alert) out = { ...out, handover_alert: { recipient_name: "", recipient_email: "" } };
+  return out;
+}
+function defaultHandoverItems() {
+  return [
+    { id: uid("hi_"), name: "Handheld Scanner", type: "check", expected_quantity: null, active: true, created_at: Date.now() },
+    { id: uid("hi_"), name: "Metal Detector", type: "check", expected_quantity: null, active: true, created_at: Date.now() },
+    { id: uid("hi_"), name: "Stapler", type: "check", expected_quantity: null, active: true, created_at: Date.now() },
+    { id: uid("hi_"), name: "Logbooks", type: "check", expected_quantity: null, active: true, created_at: Date.now() },
+    { id: uid("hi_"), name: "Visitor Passes", type: "quantity", expected_quantity: 30, active: true, created_at: Date.now() },
+    { id: uid("hi_"), name: "Contractor Passes", type: "quantity", expected_quantity: 20, active: true, created_at: Date.now() },
+  ];
 }
 async function buildFreshData() {
   return {
     users: await buildAccounts(), employees: [], attendance: [], audit: [], leaves: [],
-    visitors: [], stockItems: [], stockMovements: [], settings: defaultSettings(),
+    visitors: [], stockItems: [], stockMovements: [], handoverItems: defaultHandoverItems(), handoverRecords: [],
+    settings: defaultSettings(),
   };
 }
 async function buildSampleData() {
@@ -579,10 +608,27 @@ async function buildSampleData() {
     { id: uid("sm_"), item_id: stockItems[3].id, type: "OUT", quantity: 1, date: today, time: "11:00:00", recorded_by: "Amir Hamja", remarks: "", created_at: Date.now(), demo: true },
   ];
 
+  const handoverItems = defaultHandoverItems();
+  const handoverRecords = [
+    {
+      id: uid("ho_"), date: y, time_out: "06:00:00", time_in: "06:10:00",
+      outgoing_guard: "Amir Hamja", incoming_guard_expected: "Arslan Ahmed", incoming_guard_confirmed: "Arslan Ahmed",
+      status: "COMPLETED",
+      items: handoverItems.map((it) => ({
+        item_id: it.id, name: it.name, type: it.type,
+        present: it.type === "check" ? true : null,
+        expected_quantity: it.expected_quantity,
+        actual_quantity: it.type === "quantity" ? it.expected_quantity : null,
+      })),
+      remarks_out: "All equipment accounted for.", remarks_in: "Confirmed, nothing missing.",
+      created_at: Date.now(), updated_at: Date.now(), demo: true,
+    },
+  ];
+
   const settings = {
     ...defaultSettings(),
   };
-  return { users, employees, attendance, audit, leaves: [], visitors, stockItems, stockMovements, settings };
+  return { users, employees, attendance, audit, leaves: [], visitors, stockItems, stockMovements, handoverItems, handoverRecords, settings };
 }
 
 /* ---------------------------------------------------------------------
@@ -605,16 +651,23 @@ function Badge({ tone = "neutral", children }) {
 }
 
 function StatCard({ label, value, icon: Icon, tone }) {
-  const tones = { amber: C.amber, green: C.green, red: C.red, navy: C.navy, slate: C.slate };
-  const bar = tones[tone] || C.slate;
+  const tones = {
+    amber: { solid: C.amber, soft: "#FEF3C7", fg: C.amberDeep },
+    green: { solid: C.green, soft: "#D1FAE5", fg: C.greenDeep },
+    red: { solid: C.red, soft: "#FEE2E2", fg: C.redDeep },
+    navy: { solid: C.navy, soft: "#DBEAFE", fg: C.slate },
+    slate: { solid: C.ink50, soft: "#F1F5F9", fg: C.ink50 },
+  };
+  const t = tones[tone] || tones.slate;
   return (
-    <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, padding: "14px 16px", position: "relative", overflow: "hidden", boxShadow: "0 1px 2px rgba(22,28,36,0.04)" }}>
-      <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 4, background: bar }} />
-      <div style={{ display: "flex", alignItems: "center", gap: 8, color: C.ink50, marginBottom: 6 }}>
-        <Icon size={14} />
-        <span style={{ fontSize: 11.5, fontFamily: FONT_SANS, fontWeight: 600, textTransform: "none" }}>{label}</span>
+    <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 14, padding: "16px 18px", boxShadow: "0 1px 3px rgba(15,23,42,0.06)" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <span style={{ fontSize: 11.5, fontFamily: FONT_SANS, fontWeight: 700, color: C.ink50, letterSpacing: 0.3, textTransform: "uppercase" }}>{label}</span>
+        <div style={{ width: 30, height: 30, borderRadius: 8, background: t.soft, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <Icon size={15} color={t.fg} />
+        </div>
       </div>
-      <div style={{ fontFamily: FONT_SERIF, fontSize: 28, fontWeight: 600, color: C.ink }}>{value}</div>
+      <div style={{ fontFamily: FONT_SERIF, fontSize: 30, fontWeight: 700, color: C.ink, lineHeight: 1 }}>{value}</div>
     </div>
   );
 }
@@ -721,6 +774,8 @@ function App() {
   const [visitors, setVisitors] = useState([]);
   const [stockItems, setStockItems] = useState([]);
   const [stockMovements, setStockMovements] = useState([]);
+  const [handoverItems, setHandoverItems] = useState([]);
+  const [handoverRecords, setHandoverRecords] = useState([]);
   const [settings, setSettings] = useState(defaultSettings());
   const [session, setSession] = useState(null); // {id,name,role}
   const [view, setView] = useState("dashboard");
@@ -739,6 +794,8 @@ function App() {
   const visitorsRef = useRef(visitors); visitorsRef.current = visitors;
   const stockItemsRef = useRef(stockItems); stockItemsRef.current = stockItems;
   const stockMovementsRef = useRef(stockMovements); stockMovementsRef.current = stockMovements;
+  const handoverItemsRef = useRef(handoverItems); handoverItemsRef.current = handoverItems;
+  const handoverRecordsRef = useRef(handoverRecords); handoverRecordsRef.current = handoverRecords;
 
   const notify = useCallback((msg, type = "ok") => {
     setToast({ msg, type });
@@ -756,6 +813,8 @@ function App() {
     let vis = await loadKey(KEYS.visitors, null);
     let si = await loadKey(KEYS.stockItems, null);
     let sm = await loadKey(KEYS.stockMovements, null);
+    let hi = await loadKey(KEYS.handoverItems, null);
+    let hr = await loadKey(KEYS.handoverRecords, null);
     let set = await loadKey(KEYS.settings, null);
     if (!usr || !Array.isArray(usr) || usr.length === 0) {
       const fresh = await buildFreshData();
@@ -767,16 +826,20 @@ function App() {
       vis = vis && Array.isArray(vis) ? vis : fresh.visitors;
       si = si && Array.isArray(si) ? si : fresh.stockItems;
       sm = sm && Array.isArray(sm) ? sm : fresh.stockMovements;
+      hi = hi && Array.isArray(hi) && hi.length ? hi : fresh.handoverItems;
+      hr = hr && Array.isArray(hr) ? hr : fresh.handoverRecords;
       set = set || fresh.settings;
       await Promise.all([
         saveKey(KEYS.employees, emp), saveKey(KEYS.users, usr), saveKey(KEYS.attendance, att),
         saveKey(KEYS.audit, aud), saveKey(KEYS.leaves, lv), saveKey(KEYS.visitors, vis),
-        saveKey(KEYS.stockItems, si), saveKey(KEYS.stockMovements, sm), saveKey(KEYS.settings, set),
+        saveKey(KEYS.stockItems, si), saveKey(KEYS.stockMovements, sm),
+        saveKey(KEYS.handoverItems, hi), saveKey(KEYS.handoverRecords, hr), saveKey(KEYS.settings, set),
       ]);
     }
     setEmployees(emp || []); setUsers(usr || []); setAttendance(att || []);
     setAudit(aud || []); setLeaves(lv || []);
     setVisitors(vis || []); setStockItems(si || []); setStockMovements(sm || []);
+    setHandoverItems(hi || []); setHandoverRecords(hr || []);
     setSettings(migrateSettings(set));
     setSyncMode("local");
     setBooted(true);
@@ -870,6 +933,24 @@ function App() {
         if (!cancelled) setStockMovements(snap.docs.map((d) => d.data()));
       }, (err) => console.error("stockMovements sync error", err)));
 
+      let handoverItemsSeeded = false;
+      unsubs.push(db.collection("handoverItems").onSnapshot(async (snap) => {
+        if (cancelled) return;
+        if (snap.empty && !handoverItemsSeeded) {
+          handoverItemsSeeded = true;
+          try {
+            const items = defaultHandoverItems();
+            await Promise.all(items.map((it) => db.collection("handoverItems").doc(it.id).set(it)));
+          } catch (e) { console.error("seed handover items failed", e); }
+          return;
+        }
+        setHandoverItems(snap.docs.map((d) => d.data()));
+      }, (err) => console.error("handoverItems sync error", err)));
+
+      unsubs.push(db.collection("handoverRecords").onSnapshot((snap) => {
+        if (!cancelled) setHandoverRecords(snap.docs.map((d) => d.data()));
+      }, (err) => console.error("handoverRecords sync error", err)));
+
       unsubs.push(db.doc("config/app").onSnapshot((snap) => {
         if (cancelled) return;
         const data = snap.exists ? snap.data() : null;
@@ -932,6 +1013,18 @@ function App() {
       if (db) await syncArrayToCollection(db, "stockMovements", stockMovementsRef.current, next);
       else await saveKey(KEYS.stockMovements, next);
     },
+    handoverItems: async (next) => {
+      setHandoverItems(next);
+      const db = dbApiRef.current;
+      if (db) await syncArrayToCollection(db, "handoverItems", handoverItemsRef.current, next);
+      else await saveKey(KEYS.handoverItems, next);
+    },
+    handoverRecords: async (next) => {
+      setHandoverRecords(next);
+      const db = dbApiRef.current;
+      if (db) await syncArrayToCollection(db, "handoverRecords", handoverRecordsRef.current, next);
+      else await saveKey(KEYS.handoverRecords, next);
+    },
     settings: async (next) => {
       setSettings(next);
       const db = dbApiRef.current;
@@ -984,27 +1077,44 @@ function App() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: C.paper, fontFamily: FONT_SANS, paddingBottom: 74 }}>
+    <div className="gr-app-shell" style={{ minHeight: "100vh", background: C.paper, fontFamily: FONT_SANS }}>
       <style>{`
         @media print {
           .no-print { display: none !important; }
           body { background: #fff !important; }
         }
-        ::selection { background: ${C.amber}; color: ${C.ink}; }
+        ::selection { background: ${C.amber}; color: #fff; }
+
+        .gr-app-shell { display: flex; min-height: 100vh; }
+        .gr-sidebar {
+          width: 68px; flex-shrink: 0; position: fixed; top: 0; bottom: 0; left: 0; z-index: 45;
+          display: flex; flex-direction: column; overflow-y: auto;
+        }
+        .gr-sidebar .gr-label, .gr-sidebar .gr-brand-text, .gr-sidebar .gr-user-block { display: none; }
+        .gr-sidebar .gr-navitem { justify-content: center; padding: 11px 6px; }
+        .gr-main { margin-left: 68px; width: 100%; min-width: 0; }
+        @media (min-width: 760px) {
+          .gr-sidebar { width: 236px; }
+          .gr-sidebar .gr-label, .gr-sidebar .gr-brand-text, .gr-sidebar .gr-user-block { display: block; }
+          .gr-sidebar .gr-navitem { justify-content: flex-start; padding: 10px 14px; }
+          .gr-main { margin-left: 236px; }
+        }
       `}</style>
       <Toast toast={toast} />
-      <Header session={session} onLogout={() => { setSession(null); setView("dashboard"); }} syncMode={syncMode} canWriteShared={canWriteShared} />
-      {syncMode === "synced" && canWriteShared === false && (
-        <div style={{ background: "#FCEFE0", borderBottom: `1px solid #F2D6A6`, padding: "9px 14px", textAlign: "center", fontSize: 12.5, color: C.amberDeep }}>
-          You can see live data here, but can't save changes yet — ask whoever owns this page to give you edit access (see Settings for details).
-        </div>
-      )}
-      <main style={{ maxWidth: 960, margin: "0 auto", padding: "16px 14px 30px" }}>
+      <Sidebar session={session} onLogout={() => { setSession(null); setView("dashboard"); }}
+        syncMode={syncMode} canWriteShared={canWriteShared} view={view} setView={setView} role={session.role} />
+      <div className="gr-main">
+        {syncMode === "synced" && canWriteShared === false && (
+          <div style={{ background: "#FEF3C7", borderBottom: `1px solid #FDE68A`, padding: "9px 14px", textAlign: "center", fontSize: 12.5, color: C.amberDeep }}>
+            You can see live data here, but can't save changes yet — ask whoever owns this page to give you edit access (see Settings for details).
+          </div>
+        )}
+        <main style={{ maxWidth: 1100, margin: "0 auto", padding: "22px 20px 40px" }}>
         {view === "dashboard" && (
           <Dashboard
             session={session} employees={employees} attendance={attendance} settings={settings}
             empById={empById} today={today} goto={setView} sendReport={sendReport} leaves={leaves}
-            stockItems={stockItems} stockMovements={stockMovements} visitors={visitors}
+            stockItems={stockItems} stockMovements={stockMovements} visitors={visitors} handoverRecords={handoverRecords}
           />
         )}
         {view === "checkin" && (
@@ -1041,6 +1151,11 @@ function App() {
           <InventoryScreen session={session} stockItems={stockItems} stockMovements={stockMovements}
             persistStockItems={persist.stockItems} persistStockMovements={persist.stockMovements} notify={notify} />
         )}
+        {view === "handover" && (
+          <HandoverScreen session={session} users={users} handoverItems={handoverItems} handoverRecords={handoverRecords}
+            persistHandoverItems={persist.handoverItems} persistHandoverRecords={persist.handoverRecords}
+            settings={settings} persistSettings={persist.settings} notify={notify} />
+        )}
         {view === "employees" && session.role === "admin" && (
           <EmployeesScreen employees={employees} persistEmployees={persist.employees} notify={notify} />
         )}
@@ -1057,6 +1172,7 @@ function App() {
               await persist.attendance(sample.attendance); await persist.audit(sample.audit);
               await persist.leaves(sample.leaves); await persist.visitors(sample.visitors);
               await persist.stockItems(sample.stockItems); await persist.stockMovements(sample.stockMovements);
+              await persist.handoverItems(sample.handoverItems); await persist.handoverRecords(sample.handoverRecords);
               await persist.settings(sample.settings);
               setBusy(false);
               notify("Sample data loaded");
@@ -1068,6 +1184,7 @@ function App() {
               await persist.attendance(fresh.attendance); await persist.audit(fresh.audit);
               await persist.leaves(fresh.leaves); await persist.visitors(fresh.visitors);
               await persist.stockItems(fresh.stockItems); await persist.stockMovements(fresh.stockMovements);
+              await persist.handoverItems(fresh.handoverItems); await persist.handoverRecords(fresh.handoverRecords);
               await persist.settings(fresh.settings);
               setBusy(false);
               notify("All data erased — starting fresh");
@@ -1075,46 +1192,19 @@ function App() {
             busy={busy}
           />
         )}
-      </main>
-      <BottomNav view={view} setView={setView} role={session.role} />
+        </main>
+      </div>
     </div>
   );
 }
 
 /* ---------------------------------------------------------------------
-   HEADER + NAV
+   SIDEBAR
+   Brand + sync status at top, nav list below, user info + logout at the
+   bottom. Icon-only rail on narrow phones, full labeled sidebar once
+   there's room (see the .gr-sidebar CSS rules in App).
 --------------------------------------------------------------------- */
-function Header({ session, onLogout, syncMode, canWriteShared }) {
-  return (
-    <header style={{ background: C.navy, color: "#fff", padding: "14px 16px", position: "sticky", top: 0, zIndex: 40, borderBottom: `3px solid ${C.amber}` }}>
-      <div style={{ maxWidth: 960, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 34, height: 34, borderRadius: 7, background: C.amber, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <ShieldCheck size={19} color={C.ink} />
-          </div>
-          <div>
-            <div style={{ fontFamily: FONT_SERIF, fontSize: 16.5, lineHeight: 1.1 }}>Gatehouse Register</div>
-            <div style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: "#C7CEDB", letterSpacing: 0.3, display: "flex", alignItems: "center", gap: 5 }}>
-              <span style={{ width: 6, height: 6, borderRadius: "50%", background: syncMode === "firebase" ? "#5BC98A" : syncMode === "synced" ? (canWriteShared === false ? C.amber : "#5BC98A") : "#C7CEDB", display: "inline-block" }} />
-              {syncMode === "firebase" ? "SYNCED VIA FIREBASE" : syncMode === "synced" ? (canWriteShared === false ? "SYNCED · READ-ONLY" : "SYNCED ACROSS DEVICES") : "LOCAL DEVICE ONLY"}
-            </div>
-          </div>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: 13, fontWeight: 600 }}>{session.name}</div>
-            <div style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: C.amber }}>{session.role.toUpperCase()}</div>
-          </div>
-          <button onClick={onLogout} title="Log out" style={{ background: "rgba(255,255,255,0.1)", border: "none", borderRadius: 7, padding: 8, cursor: "pointer", color: "#fff" }}>
-            <LogOut size={17} />
-          </button>
-        </div>
-      </div>
-    </header>
-  );
-}
-
-function BottomNav({ view, setView, role }) {
+function Sidebar({ session, onLogout, syncMode, canWriteShared, view, setView, role }) {
   const items = [
     { id: "dashboard", label: "Dashboard", icon: Home, roles: ["admin", "guard"] },
     { id: "checkin", label: "Check In", icon: DoorOpen, roles: ["admin", "guard"] },
@@ -1124,30 +1214,62 @@ function BottomNav({ view, setView, role }) {
     { id: "leave", label: "Leave", icon: UserX, roles: ["admin", "guard"] },
     { id: "visitors", label: "Visitors", icon: UserPlus, roles: ["admin", "guard"] },
     { id: "inventory", label: "Inventory", icon: Package, roles: ["admin", "guard"] },
+    { id: "handover", label: "Handover", icon: RefreshCw, roles: ["admin", "guard"] },
     { id: "employees", label: "Employees", icon: Users, roles: ["admin"] },
     { id: "reports", label: "Reports", icon: BarChart3, roles: ["admin"] },
     { id: "settings", label: "Settings", icon: SettingsIcon, roles: ["admin"] },
   ].filter((i) => i.roles.includes(role));
 
+  const dotColor = syncMode === "firebase" ? "#34D399" : syncMode === "synced" ? (canWriteShared === false ? C.amber : "#34D399") : "rgba(255,255,255,0.55)";
+  const syncLabel = syncMode === "firebase" ? "Synced via Firebase" : syncMode === "synced" ? (canWriteShared === false ? "Synced · read-only" : "Synced across devices") : "Local device only";
+
   return (
-    <nav className="no-print" style={{
-      position: "fixed", bottom: 0, left: 0, right: 0, background: "#fff", borderTop: `1px solid ${C.line}`,
-      display: "flex", overflowX: "auto", zIndex: 40, boxShadow: "0 -4px 14px rgba(0,0,0,0.06)",
-    }}>
-      {items.map((it) => {
-        const active = view === it.id;
-        return (
-          <button key={it.id} onClick={() => setView(it.id)} style={{
-            flex: "1 0 auto", minWidth: 68, display: "flex", flexDirection: "column", alignItems: "center",
-            gap: 3, padding: "9px 8px 8px", background: "none", border: "none", cursor: "pointer",
-            color: active ? C.navy : C.ink50, borderTop: active ? `2px solid ${C.amber}` : "2px solid transparent",
-          }}>
-            <it.icon size={19} />
-            <span style={{ fontSize: 10.5, fontFamily: FONT_SANS, fontWeight: 600 }}>{it.label}</span>
-          </button>
-        );
-      })}
-    </nav>
+    <aside className="gr-sidebar no-print" style={{ background: `linear-gradient(180deg, ${C.navy}, ${C.slate})`, color: "#fff" }}>
+      <div style={{ padding: "18px 12px 16px", borderBottom: "1px solid rgba(255,255,255,0.14)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center" }}>
+          <div style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 9, background: C.amber, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <ShieldCheck size={19} color="#fff" />
+          </div>
+          <div className="gr-brand-text" style={{ minWidth: 0 }}>
+            <div style={{ fontFamily: FONT_SERIF, fontSize: 16, lineHeight: 1.15 }}>Gatehouse Register</div>
+          </div>
+        </div>
+        <div className="gr-brand-text" style={{ fontFamily: FONT_MONO, fontSize: 10, color: "rgba(255,255,255,0.75)", letterSpacing: 0.3, display: "flex", alignItems: "center", gap: 6, marginTop: 10, justifyContent: "center" }}>
+          <span style={{ width: 6, height: 6, borderRadius: "50%", background: dotColor, flexShrink: 0 }} />
+          {syncLabel.toUpperCase()}
+        </div>
+      </div>
+
+      <nav style={{ flex: 1, overflowY: "auto", padding: "10px 8px" }}>
+        {items.map((it) => {
+          const active = view === it.id;
+          return (
+            <button key={it.id} className="gr-navitem" onClick={() => setView(it.id)} style={{
+              width: "100%", display: "flex", alignItems: "center", gap: 12, borderRadius: 9, marginBottom: 2,
+              background: active ? "rgba(255,255,255,0.16)" : "transparent", border: "none", cursor: "pointer",
+              color: active ? "#fff" : "rgba(255,255,255,0.75)", fontSize: 13.5, fontWeight: 600,
+              borderLeft: active ? `3px solid ${C.amber}` : "3px solid transparent",
+            }}>
+              <it.icon size={18} style={{ flexShrink: 0 }} />
+              <span className="gr-label">{it.label}</span>
+            </button>
+          );
+        })}
+      </nav>
+
+      <div style={{ padding: "14px 12px", borderTop: "1px solid rgba(255,255,255,0.14)" }}>
+        <div className="gr-user-block" style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>{session.name}</div>
+          <div style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: C.amber }}>{session.role.toUpperCase()}</div>
+        </div>
+        <button onClick={onLogout} title="Log out" style={{
+          width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+          background: "rgba(255,255,255,0.12)", border: "none", borderRadius: 7, padding: "9px 10px", cursor: "pointer", color: "#fff", fontSize: 12.5, fontWeight: 600,
+        }}>
+          <LogOut size={15} style={{ flexShrink: 0 }} /> <span className="gr-label">Log Out</span>
+        </button>
+      </div>
+    </aside>
   );
 }
 
@@ -1340,7 +1462,7 @@ function LoginScreen({ users, onLogin, notify, onResetAccounts }) {
 /* ---------------------------------------------------------------------
    DASHBOARD
 --------------------------------------------------------------------- */
-function Dashboard({ session, employees, attendance, settings, empById, today, goto, sendReport, leaves, stockItems, stockMovements, visitors }) {
+function Dashboard({ session, employees, attendance, settings, empById, today, goto, sendReport, leaves, stockItems, stockMovements, visitors, handoverRecords }) {
   const todays = attendance.filter((a) => a.date === today);
   const inside = todays.filter((a) => a.status === "INSIDE");
   const checkedOutToday = todays.filter((a) => a.status === "CHECKED_OUT");
@@ -1365,7 +1487,29 @@ function Dashboard({ session, employees, attendance, settings, empById, today, g
 
   return (
     <div>
-      <SectionTitle title="Today's Dashboard" sub={fmtDate(today)} />
+      <div style={{
+        background: `linear-gradient(135deg, ${C.navy}, ${C.slate})`, borderRadius: 16, padding: "22px 24px", marginBottom: 22,
+        color: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12,
+        boxShadow: "0 4px 16px rgba(37,99,235,0.2)",
+      }}>
+        <div>
+          <div style={{ fontFamily: FONT_SERIF, fontSize: 22, marginBottom: 4 }}>{timeGreeting()}, {session.name.split(" ")[0]}</div>
+          <div style={{ fontSize: 13, color: "rgba(255,255,255,0.82)" }}>{fmtDate(today)} · Today's Dashboard</div>
+        </div>
+        <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: "#fff", background: "rgba(255,255,255,0.18)", padding: "6px 14px", borderRadius: 20, fontWeight: 600, letterSpacing: 0.3 }}>
+          {session.role.toUpperCase()}
+        </div>
+      </div>
+
+      {(handoverRecords || []).some((r) => r.status === "PENDING") && (
+        <div style={{ background: "#FEF3C7", border: `1px solid #FDE68A`, borderRadius: 10, padding: "12px 14px", marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <RefreshCw size={18} color={C.amberDeep} />
+            <div style={{ fontWeight: 700, fontSize: 13.5, color: C.ink }}>A shift handover is waiting for you to take over</div>
+          </div>
+          <Btn size="sm" tone="amber" onClick={() => goto("handover")}>Review &amp; Take Over</Btn>
+        </div>
+      )}
 
       {dueSections.map((s) => {
         const ch = channels[s];
@@ -2405,6 +2549,304 @@ function StockMovementForm({ item, type, onClose, onSave }) {
       <Field label="ID / Card Number (optional)"><input style={inputStyle} value={idCard} onChange={(e) => setIdCard(e.target.value)} placeholder="whatever ID the gate records, if any" /></Field>
       <Field label="Remarks (optional)"><input style={inputStyle} value={remarks} onChange={(e) => setRemarks(e.target.value)} /></Field>
       <Btn full tone={type === "IN" ? "green" : "red"} onClick={save} disabled={!Number(quantity)}>Record {type === "IN" ? "Stock In" : "Stock Out"}</Btn>
+    </Modal>
+  );
+}
+
+/* ---------------------------------------------------------------------
+   SHIFT HANDOVER / TAKEOVER
+   The outgoing guard checks off every piece of equipment and pass count
+   on the post, then the incoming guard reviews and formally takes over.
+   Anything missing is flagged immediately and can be emailed straight to
+   a manager rather than waiting for a scheduled report.
+--------------------------------------------------------------------- */
+function HandoverScreen({ session, users, handoverItems, handoverRecords, persistHandoverItems, persistHandoverRecords, settings, persistSettings, notify }) {
+  const [tab, setTab] = useState("current");
+  const [showStart, setShowStart] = useState(false);
+  const [takingOver, setTakingOver] = useState(null);
+  const [managingItems, setManagingItems] = useState(false);
+
+  const pending = handoverRecords.find((r) => r.status === "PENDING");
+  const activeItems = handoverItems.filter((i) => i.active);
+  const history = useMemo(() => [...handoverRecords].filter((r) => r.status === "COMPLETED").sort((a, b) => (b.date + b.time_out).localeCompare(a.date + a.time_out)), [handoverRecords]);
+
+  const startHandover = async (data) => {
+    const now = new Date();
+    const missing = data.items.filter((it) => !handoverItemOk(it));
+    const rec = {
+      id: uid("ho_"), date: todayStr(now), time_out: nowTimeStr(now), time_in: null,
+      outgoing_guard: session.name, incoming_guard_expected: data.incoming_guard_expected, incoming_guard_confirmed: null,
+      status: "PENDING", items: data.items, remarks_out: data.remarks, remarks_in: "",
+      created_at: Date.now(), updated_at: Date.now(),
+    };
+    await persistHandoverRecords([rec, ...handoverRecords]);
+    setShowStart(false);
+    notify("Handover submitted — waiting for the next guard to take over");
+    if (missing.length > 0) notify(`${missing.length} item(s) flagged as missing or short`, "error");
+  };
+
+  const completeTakeover = async (remarksIn, updatedItems) => {
+    const now = new Date();
+    const updated = { ...pending, status: "COMPLETED", time_in: nowTimeStr(now), incoming_guard_confirmed: session.name, remarks_in: remarksIn, items: updatedItems, updated_at: Date.now() };
+    await persistHandoverRecords(handoverRecords.map((r) => (r.id === pending.id ? updated : r)));
+    setTakingOver(null);
+    notify("Shift taken over");
+  };
+
+  const sendMissingAlert = async (record) => {
+    const alert = settings.handover_alert || { recipient_name: "", recipient_email: "" };
+    if (!alert.recipient_email) { notify("Add a manager's email in Settings → Handover Alerts first", "error"); return; }
+    const missing = record.items.filter((it) => !handoverItemOk(it));
+    const subject = `Gate Handover — ${missing.length} item(s) missing or short (${record.date})`;
+    const lines = [
+      `Shift handover reported missing/short items.`, `Date: ${fmtDate(record.date)}`, `Outgoing guard: ${record.outgoing_guard}`,
+      `Incoming guard: ${record.incoming_guard_confirmed || record.incoming_guard_expected}`, "", "Missing / short:",
+      ...missing.map((it) => it.type === "quantity" ? `- ${it.name}: ${it.actual_quantity ?? 0} / ${it.expected_quantity} expected` : `- ${it.name}: missing`),
+      "", record.remarks_out ? `Outgoing notes: ${record.remarks_out}` : "", record.remarks_in ? `Incoming notes: ${record.remarks_in}` : "",
+      "", "Sent from the Gatehouse Register app.",
+    ].filter(Boolean);
+    const mailto = `mailto:${encodeURIComponent(alert.recipient_email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(lines.join("\n"))}`;
+    const a = document.createElement("a"); a.href = mailto; a.target = "_blank";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    notify("Alert ready — check your email app");
+  };
+
+  return (
+    <div>
+      <SectionTitle title="Shift Handover" sub={pending ? "A handover is waiting to be taken over" : "No handover currently pending"}
+        action={session.role === "admin" ? { label: "Manage Checklist", onClick: () => setManagingItems(true) } : undefined} />
+
+      <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+        {[["current", "Current"], ["history", "History"]].map(([k, label]) => (
+          <button key={k} onClick={() => setTab(k)} style={{
+            padding: "7px 12px", borderRadius: 20, fontSize: 12.5, fontWeight: 600, cursor: "pointer",
+            border: `1px solid ${tab === k ? C.navy : C.line}`, background: tab === k ? C.navy : "#fff", color: tab === k ? "#fff" : C.ink,
+          }}>{label}</button>
+        ))}
+      </div>
+
+      {tab === "current" ? (
+        <div>
+          {pending ? (
+            <div style={{ background: "#fff", border: `2px solid ${C.amber}`, borderRadius: 12, padding: 18, marginBottom: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                <RefreshCw size={17} color={C.amberDeep} />
+                <span style={{ fontWeight: 700, fontSize: 14.5, color: C.amberDeep }}>Pending Takeover</span>
+              </div>
+              <div style={{ fontSize: 13, color: C.ink, marginBottom: 4 }}>Handed over by <b>{pending.outgoing_guard}</b> at {fmtTime(pending.time_out)}</div>
+              <div style={{ fontSize: 13, color: C.ink50, marginBottom: 12 }}>Expected incoming guard: {pending.incoming_guard_expected}</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 12 }}>
+                {pending.items.map((it) => (
+                  <div key={it.item_id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "3px 0", borderBottom: `1px dashed ${C.line}` }}>
+                    <span>{it.name}</span>
+                    {it.type === "quantity" ? (
+                      <span style={{ fontFamily: FONT_MONO, color: handoverItemOk(it) ? C.greenDeep : C.redDeep, fontWeight: 600 }}>{it.actual_quantity ?? 0} / {it.expected_quantity}</span>
+                    ) : (
+                      <Badge tone={it.present ? "inside" : "missing"}>{it.present ? "OK" : "MISSING"}</Badge>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {pending.remarks_out && <div style={{ fontSize: 12.5, color: C.ink50, marginBottom: 12 }}>Notes from outgoing guard: {pending.remarks_out}</div>}
+              {pending.items.some((it) => !handoverItemOk(it)) && (
+                <div style={{ background: "#FEE2E2", color: C.redDeep, borderRadius: 8, padding: "9px 11px", fontSize: 12.5, marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                  <span>Some items are missing or short.</span>
+                  <Btn size="sm" tone="red" onClick={() => sendMissingAlert(pending)}>Alert Manager</Btn>
+                </div>
+              )}
+              <Btn full tone="amber" icon={RefreshCw} onClick={() => setTakingOver(pending)}>Take Over Shift</Btn>
+            </div>
+          ) : (
+            <div style={{ marginBottom: 16 }}>
+              <EmptyState icon={RefreshCw} title="No handover pending" sub="Starting a new handover below will post it for the next guard" />
+            </div>
+          )}
+
+          <Btn full tone="navy" icon={DoorOpen} onClick={() => setShowStart(true)} disabled={!!pending}>
+            {pending ? "Complete the pending takeover first" : "+ Start Handover (End of My Shift)"}
+          </Btn>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {history.length === 0 ? <EmptyState icon={ClipboardList} title="No completed handovers yet" /> : (
+            history.map((r) => {
+              const missing = r.items.filter((it) => !handoverItemOk(it));
+              return (
+                <div key={r.id} style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, padding: "12px 14px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                    <span style={{ fontWeight: 600, fontSize: 13.5 }}>{fmtDate(r.date)}</span>
+                    {missing.length > 0 ? <Badge tone="missing">{missing.length} ISSUE(S)</Badge> : <Badge tone="inside">ALL CLEAR</Badge>}
+                  </div>
+                  <div style={{ fontSize: 12.5, color: C.ink50 }}>{r.outgoing_guard} → {r.incoming_guard_confirmed} · {fmtTime(r.time_out)} to {fmtTime(r.time_in)}</div>
+                  {missing.length > 0 && <div style={{ fontSize: 12, color: C.redDeep, marginTop: 4 }}>{missing.map((m) => m.name).join(", ")}</div>}
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {showStart && <HandoverForm items={activeItems} users={users} session={session} onClose={() => setShowStart(false)} onSave={startHandover} />}
+      {takingOver && <TakeoverForm record={takingOver} onClose={() => setTakingOver(null)} onConfirm={completeTakeover} />}
+      {managingItems && (
+        <HandoverItemsManager items={handoverItems} persistItems={persistHandoverItems}
+          settings={settings} persistSettings={persistSettings} notify={notify} onClose={() => setManagingItems(false)} />
+      )}
+    </div>
+  );
+}
+
+function HandoverForm({ items, users, session, onClose, onSave }) {
+  const [state, setState] = useState(() => Object.fromEntries(items.map((i) => [i.id, i.type === "check" ? true : i.expected_quantity])));
+  const [incomingGuard, setIncomingGuard] = useState("");
+  const [remarks, setRemarks] = useState("");
+
+  const otherUsers = users.filter((u) => u.active && u.name !== session.name);
+
+  const save = () => {
+    if (!incomingGuard.trim()) return;
+    const builtItems = items.map((i) => ({
+      item_id: i.id, name: i.name, type: i.type,
+      present: i.type === "check" ? !!state[i.id] : null,
+      expected_quantity: i.expected_quantity,
+      actual_quantity: i.type === "quantity" ? Number(state[i.id]) : null,
+    }));
+    onSave({ incoming_guard_expected: incomingGuard.trim(), remarks: remarks.trim(), items: builtItems });
+  };
+
+  return (
+    <Modal title="Start Shift Handover" onClose={onClose} wide>
+      <Field label="Incoming guard">
+        <select style={inputStyle} value={incomingGuard} onChange={(e) => setIncomingGuard(e.target.value)}>
+          <option value="">Select…</option>
+          {otherUsers.map((u) => <option key={u.id} value={u.name}>{u.name}</option>)}
+        </select>
+      </Field>
+      <div style={{ fontSize: 12.5, fontWeight: 600, color: C.ink50, margin: "6px 0" }}>CHECKLIST</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+        {items.map((i) => (
+          <div key={i.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: C.paperDim, borderRadius: 8, padding: "9px 12px" }}>
+            <span style={{ fontSize: 13.5 }}>{i.name}</span>
+            {i.type === "check" ? (
+              <label style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer" }}>
+                <input type="checkbox" checked={!!state[i.id]} onChange={(e) => setState((s) => ({ ...s, [i.id]: e.target.checked }))} />
+                <span style={{ fontSize: 12.5, color: state[i.id] ? C.greenDeep : C.redDeep, fontWeight: 600 }}>{state[i.id] ? "Present" : "Missing"}</span>
+              </label>
+            ) : (
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <input type="number" min="0" style={{ ...inputStyle, width: 72, padding: "6px 8px" }} value={state[i.id]} onChange={(e) => setState((s) => ({ ...s, [i.id]: e.target.value }))} />
+                <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, color: C.ink50 }}>/ {i.expected_quantity}</span>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      <Field label="Remarks (optional)"><input style={inputStyle} value={remarks} onChange={(e) => setRemarks(e.target.value)} /></Field>
+      <Btn full tone="navy" onClick={save} disabled={!incomingGuard.trim()}>Submit Handover</Btn>
+    </Modal>
+  );
+}
+
+function TakeoverForm({ record, onClose, onConfirm }) {
+  const [items, setItems] = useState(record.items);
+  const [remarks, setRemarks] = useState("");
+
+  const toggleCheck = (itemId) => setItems((list) => list.map((i) => (i.item_id === itemId ? { ...i, present: !i.present } : i)));
+  const setQty = (itemId, val) => setItems((list) => list.map((i) => (i.item_id === itemId ? { ...i, actual_quantity: Number(val) } : i)));
+
+  return (
+    <Modal title="Take Over Shift" onClose={onClose} wide>
+      <p style={{ fontSize: 12.5, color: C.ink50, marginTop: 0 }}>Review what the outgoing guard reported. Adjust anything that doesn't match what you actually find.</p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+        {items.map((i) => (
+          <div key={i.item_id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: C.paperDim, borderRadius: 8, padding: "9px 12px" }}>
+            <span style={{ fontSize: 13.5 }}>{i.name}</span>
+            {i.type === "check" ? (
+              <label style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer" }}>
+                <input type="checkbox" checked={!!i.present} onChange={() => toggleCheck(i.item_id)} />
+                <span style={{ fontSize: 12.5, color: i.present ? C.greenDeep : C.redDeep, fontWeight: 600 }}>{i.present ? "Present" : "Missing"}</span>
+              </label>
+            ) : (
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <input type="number" min="0" style={{ ...inputStyle, width: 72, padding: "6px 8px" }} value={i.actual_quantity ?? 0} onChange={(e) => setQty(i.item_id, e.target.value)} />
+                <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, color: C.ink50 }}>/ {i.expected_quantity}</span>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      <Field label="Your remarks (optional)"><input style={inputStyle} value={remarks} onChange={(e) => setRemarks(e.target.value)} /></Field>
+      <Btn full tone="amber" onClick={() => onConfirm(remarks.trim(), items)}>Confirm Takeover</Btn>
+    </Modal>
+  );
+}
+
+function HandoverItemsManager({ items, persistItems, settings, persistSettings, notify, onClose }) {
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newType, setNewType] = useState("check");
+  const [newQty, setNewQty] = useState(10);
+  const alert0 = settings.handover_alert || { recipient_name: "", recipient_email: "" };
+  const [alertForm, setAlertForm] = useState(alert0);
+
+  const addItem = async () => {
+    if (!newName.trim()) return;
+    await persistItems([{ id: uid("hi_"), name: newName.trim(), type: newType, expected_quantity: newType === "quantity" ? Number(newQty) || 0 : null, active: true, created_at: Date.now() }, ...items]);
+    setNewName(""); setNewQty(10); setAdding(false);
+    notify("Checklist item added");
+  };
+  const toggleActive = async (item) => {
+    await persistItems(items.map((i) => (i.id === item.id ? { ...i, active: !i.active } : i)));
+  };
+  const saveAlert = async () => {
+    if (alertForm.recipient_email && !alertForm.recipient_name) { notify("Add a name for the recipient too", "error"); return; }
+    await persistSettings({ ...settings, handover_alert: alertForm });
+    notify("Handover alert settings saved");
+  };
+
+  return (
+    <Modal title="Manage Handover Checklist" onClose={onClose} wide>
+      <div style={{ marginBottom: 18 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 8 }}>Checklist Items</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
+          {items.map((i) => (
+            <div key={i.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: C.paperDim, borderRadius: 7, padding: "7px 10px" }}>
+              <span style={{ fontSize: 13, opacity: i.active ? 1 : 0.5 }}>{i.name} {i.type === "quantity" ? `(expect ${i.expected_quantity})` : ""}{!i.active ? " — inactive" : ""}</span>
+              <button onClick={() => toggleActive(i)} style={{ background: "none", border: `1px solid ${C.line}`, borderRadius: 6, padding: "3px 8px", fontSize: 11, cursor: "pointer" }}>{i.active ? "Remove" : "Restore"}</button>
+            </div>
+          ))}
+        </div>
+        {!adding ? (
+          <Btn size="sm" tone="paper" icon={UserPlus} onClick={() => setAdding(true)}>Add Item</Btn>
+        ) : (
+          <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 8, padding: 10 }}>
+            <Field label="Item name"><input style={inputStyle} value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="e.g. Torch, Radio" /></Field>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <Field label="Type">
+                <select style={inputStyle} value={newType} onChange={(e) => setNewType(e.target.value)}>
+                  <option value="check">Checkbox (present/missing)</option>
+                  <option value="quantity">Quantity (count)</option>
+                </select>
+              </Field>
+              {newType === "quantity" && <Field label="Expected quantity"><input type="number" min="0" style={inputStyle} value={newQty} onChange={(e) => setNewQty(e.target.value)} /></Field>}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Btn size="sm" tone="ghost" onClick={() => setAdding(false)}>Cancel</Btn>
+              <Btn size="sm" tone="navy" onClick={addItem} disabled={!newName.trim()}>Add</Btn>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div style={{ borderTop: `1px dashed ${C.line}`, paddingTop: 14 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 8 }}>Handover Alert Email</div>
+        <p style={{ fontSize: 12, color: C.ink50, margin: "0 0 10px" }}>Who gets notified immediately when a handover has missing or short items.</p>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <Field label="Manager's name"><input style={inputStyle} value={alertForm.recipient_name} onChange={(e) => setAlertForm((f) => ({ ...f, recipient_name: e.target.value }))} /></Field>
+          <Field label="Manager's email"><input type="email" style={inputStyle} value={alertForm.recipient_email} onChange={(e) => setAlertForm((f) => ({ ...f, recipient_email: e.target.value }))} /></Field>
+        </div>
+        <Btn size="sm" tone="navy" onClick={saveAlert}>Save</Btn>
+      </div>
     </Modal>
   );
 }
