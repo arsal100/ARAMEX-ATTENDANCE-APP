@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
-<title>Gatehouse Register — Digital Gate Attendance</title>
+<title>Aramex Gatehouse Register</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@400;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -137,6 +137,7 @@ const C = {
   red: "#EF4444",
   redDeep: "#B91C1C",
   ink50: "#64748B",
+  aramexRed: "#E4002B",  // Aramex brand red, used for the wordmark/header accent
 };
 
 const FONT_SERIF = "'Source Serif 4', Georgia, serif";
@@ -298,7 +299,7 @@ function buildReportPayload(freq, employees, attendance, empById, settings) {
       return `- ${r.date} ${r.emp.name} (${r.emp.employee_number}): IN ${fmtTime(r.time_in)}${r.time_out ? ", OUT " + fmtTime(r.time_out) : " (still inside)"}${ot > 0 ? ` [OVERTIME +${fmtDuration(ot)}]` : ""}`;
     }),
     rows.length > 15 ? `…and ${rows.length - 15} more record(s) — see attached CSV for the full list.` : "",
-    "", "Sent from the Gatehouse Register app.",
+    "", "Sent from the Aramex Gatehouse Register app.",
   ].filter(Boolean);
 
   const csvHeaders = [
@@ -327,7 +328,7 @@ function buildSecurityReportPayload(freq, visitors) {
     "Recent entries:",
     ...rows.slice(0, 15).map((r) => `- ${r.date} ${r.name} (${r.type}${r.company ? ", " + r.company : ""}): IN ${fmtTime(r.time_in)}${r.time_out ? ", OUT " + fmtTime(r.time_out) : " (still inside)"} — pass ${r.pass_number || "—"}, to see ${r.host_name || "—"}`),
     rows.length > 15 ? `…and ${rows.length - 15} more record(s) — see attached CSV for the full list.` : "",
-    "", "Sent from the Gatehouse Register app.",
+    "", "Sent from the Aramex Gatehouse Register app.",
   ].filter(Boolean);
 
   const csvHeaders = [
@@ -358,7 +359,7 @@ function buildInventoryReportPayload(freq, stockItems, stockMovements) {
     "", "Recent movements:",
     ...rows.slice(0, 15).map((r) => `- ${r.date} ${fmtTime(r.time)} ${r.item.name}: ${r.type} ${r.quantity} ${r.item.unit}${r.person_name ? ` (${r.type === "IN" ? "from" : "to"} ${r.person_name}${r.company ? ", " + r.company : ""})` : ""}`),
     rows.length > 15 ? `…and ${rows.length - 15} more record(s) — see attached CSV for the full list.` : "",
-    "", "Sent from the Gatehouse Register app.",
+    "", "Sent from the Aramex Gatehouse Register app.",
   ].filter(Boolean);
 
   const csvHeaders = [
@@ -376,7 +377,7 @@ function buildInventoryReportPayload(freq, stockItems, stockMovements) {
 const KEYS = {
   employees: "employees", users: "users", attendance: "attendance", audit: "auditLogs", settings: "settings", leaves: "leaves",
   visitors: "visitors", stockItems: "stockItems", stockMovements: "stockMovements",
-  handoverItems: "handoverItems", handoverRecords: "handoverRecords",
+  handoverItems: "handoverItems", handoverRecords: "handoverRecords", incidents: "incidents",
 };
 async function loadKey(key, fallback) {
   try {
@@ -479,6 +480,7 @@ function defaultSettings() {
     shift_hours: 9,
     report_channels: { attendance: defaultChannel(), security: defaultChannel(), inventory: defaultChannel() },
     handover_alert: { recipient_name: "", recipient_email: "" },
+    incident_alert: { recipient_name: "", recipient_email: "" },
   };
 }
 // Older saves had one shared `report_delivery` channel — carry it forward as the
@@ -495,6 +497,7 @@ function migrateSettings(raw) {
     }
   }
   if (!out.handover_alert) out = { ...out, handover_alert: { recipient_name: "", recipient_email: "" } };
+  if (!out.incident_alert) out = { ...out, incident_alert: { recipient_name: "", recipient_email: "" } };
   return out;
 }
 function defaultHandoverItems() {
@@ -511,7 +514,7 @@ async function buildFreshData() {
   return {
     users: await buildAccounts(), employees: [], attendance: [], audit: [], leaves: [],
     visitors: [], stockItems: [], stockMovements: [], handoverItems: defaultHandoverItems(), handoverRecords: [],
-    settings: defaultSettings(),
+    incidents: [], settings: defaultSettings(),
   };
 }
 async function buildSampleData() {
@@ -628,7 +631,17 @@ async function buildSampleData() {
   const settings = {
     ...defaultSettings(),
   };
-  return { users, employees, attendance, audit, leaves: [], visitors, stockItems, stockMovements, handoverItems, handoverRecords, settings };
+  const incidents = [
+    {
+      id: uid("inc_"), date: y, time: "13:20:00", type: "Safety Hazard", location: "Loading Bay 2",
+      severity: "Medium", description: "Oil spill near forklift path, cordoned off and cleaned.",
+      people_involved: "", action_taken: "Area cordoned off with cones, cleaning crew notified and spill cleaned within 20 minutes.",
+      status: "Resolved", reported_by: "Arslan Ahmed", resolved_by: "Arslan Ahmed", resolution_notes: "Cleaned and area reopened.",
+      created_at: Date.now(), updated_at: Date.now(), demo: true,
+    },
+  ];
+
+  return { users, employees, attendance, audit, leaves: [], visitors, stockItems, stockMovements, handoverItems, handoverRecords, incidents, settings };
 }
 
 /* ---------------------------------------------------------------------
@@ -776,6 +789,7 @@ function App() {
   const [stockMovements, setStockMovements] = useState([]);
   const [handoverItems, setHandoverItems] = useState([]);
   const [handoverRecords, setHandoverRecords] = useState([]);
+  const [incidents, setIncidents] = useState([]);
   const [settings, setSettings] = useState(defaultSettings());
   const [session, setSession] = useState(null); // {id,name,role}
   const [view, setView] = useState("dashboard");
@@ -796,6 +810,7 @@ function App() {
   const stockMovementsRef = useRef(stockMovements); stockMovementsRef.current = stockMovements;
   const handoverItemsRef = useRef(handoverItems); handoverItemsRef.current = handoverItems;
   const handoverRecordsRef = useRef(handoverRecords); handoverRecordsRef.current = handoverRecords;
+  const incidentsRef = useRef(incidents); incidentsRef.current = incidents;
 
   const notify = useCallback((msg, type = "ok") => {
     setToast({ msg, type });
@@ -815,6 +830,7 @@ function App() {
     let sm = await loadKey(KEYS.stockMovements, null);
     let hi = await loadKey(KEYS.handoverItems, null);
     let hr = await loadKey(KEYS.handoverRecords, null);
+    let inc = await loadKey(KEYS.incidents, null);
     let set = await loadKey(KEYS.settings, null);
     if (!usr || !Array.isArray(usr) || usr.length === 0) {
       const fresh = await buildFreshData();
@@ -828,18 +844,20 @@ function App() {
       sm = sm && Array.isArray(sm) ? sm : fresh.stockMovements;
       hi = hi && Array.isArray(hi) && hi.length ? hi : fresh.handoverItems;
       hr = hr && Array.isArray(hr) ? hr : fresh.handoverRecords;
+      inc = inc && Array.isArray(inc) ? inc : fresh.incidents;
       set = set || fresh.settings;
       await Promise.all([
         saveKey(KEYS.employees, emp), saveKey(KEYS.users, usr), saveKey(KEYS.attendance, att),
         saveKey(KEYS.audit, aud), saveKey(KEYS.leaves, lv), saveKey(KEYS.visitors, vis),
         saveKey(KEYS.stockItems, si), saveKey(KEYS.stockMovements, sm),
-        saveKey(KEYS.handoverItems, hi), saveKey(KEYS.handoverRecords, hr), saveKey(KEYS.settings, set),
+        saveKey(KEYS.handoverItems, hi), saveKey(KEYS.handoverRecords, hr),
+        saveKey(KEYS.incidents, inc), saveKey(KEYS.settings, set),
       ]);
     }
     setEmployees(emp || []); setUsers(usr || []); setAttendance(att || []);
     setAudit(aud || []); setLeaves(lv || []);
     setVisitors(vis || []); setStockItems(si || []); setStockMovements(sm || []);
-    setHandoverItems(hi || []); setHandoverRecords(hr || []);
+    setHandoverItems(hi || []); setHandoverRecords(hr || []); setIncidents(inc || []);
     setSettings(migrateSettings(set));
     setSyncMode("local");
     setBooted(true);
@@ -951,6 +969,10 @@ function App() {
         if (!cancelled) setHandoverRecords(snap.docs.map((d) => d.data()));
       }, (err) => console.error("handoverRecords sync error", err)));
 
+      unsubs.push(db.collection("incidents").onSnapshot((snap) => {
+        if (!cancelled) setIncidents(snap.docs.map((d) => d.data()));
+      }, (err) => console.error("incidents sync error", err)));
+
       unsubs.push(db.doc("config/app").onSnapshot((snap) => {
         if (cancelled) return;
         const data = snap.exists ? snap.data() : null;
@@ -1025,6 +1047,12 @@ function App() {
       if (db) await syncArrayToCollection(db, "handoverRecords", handoverRecordsRef.current, next);
       else await saveKey(KEYS.handoverRecords, next);
     },
+    incidents: async (next) => {
+      setIncidents(next);
+      const db = dbApiRef.current;
+      if (db) await syncArrayToCollection(db, "incidents", incidentsRef.current, next);
+      else await saveKey(KEYS.incidents, next);
+    },
     settings: async (next) => {
       setSettings(next);
       const db = dbApiRef.current;
@@ -1077,44 +1105,27 @@ function App() {
   }
 
   return (
-    <div className="gr-app-shell" style={{ minHeight: "100vh", background: C.paper, fontFamily: FONT_SANS }}>
+    <div style={{ minHeight: "100vh", background: C.paper, fontFamily: FONT_SANS, paddingBottom: 76 }}>
       <style>{`
         @media print {
           .no-print { display: none !important; }
           body { background: #fff !important; }
         }
         ::selection { background: ${C.amber}; color: #fff; }
-
-        .gr-app-shell { display: flex; min-height: 100vh; }
-        .gr-sidebar {
-          width: 68px; flex-shrink: 0; position: fixed; top: 0; bottom: 0; left: 0; z-index: 45;
-          display: flex; flex-direction: column; overflow-y: auto;
-        }
-        .gr-sidebar .gr-label, .gr-sidebar .gr-brand-text, .gr-sidebar .gr-user-block { display: none; }
-        .gr-sidebar .gr-navitem { justify-content: center; padding: 11px 6px; }
-        .gr-main { margin-left: 68px; width: 100%; min-width: 0; }
-        @media (min-width: 760px) {
-          .gr-sidebar { width: 236px; }
-          .gr-sidebar .gr-label, .gr-sidebar .gr-brand-text, .gr-sidebar .gr-user-block { display: block; }
-          .gr-sidebar .gr-navitem { justify-content: flex-start; padding: 10px 14px; }
-          .gr-main { margin-left: 236px; }
-        }
       `}</style>
       <Toast toast={toast} />
-      <Sidebar session={session} onLogout={() => { setSession(null); setView("dashboard"); }}
-        syncMode={syncMode} canWriteShared={canWriteShared} view={view} setView={setView} role={session.role} />
-      <div className="gr-main">
-        {syncMode === "synced" && canWriteShared === false && (
-          <div style={{ background: "#FEF3C7", borderBottom: `1px solid #FDE68A`, padding: "9px 14px", textAlign: "center", fontSize: 12.5, color: C.amberDeep }}>
-            You can see live data here, but can't save changes yet — ask whoever owns this page to give you edit access (see Settings for details).
-          </div>
-        )}
-        <main style={{ maxWidth: 1100, margin: "0 auto", padding: "22px 20px 40px" }}>
+      <Header session={session} onLogout={() => { setSession(null); setView("dashboard"); }} syncMode={syncMode} canWriteShared={canWriteShared} />
+      {syncMode === "synced" && canWriteShared === false && (
+        <div style={{ background: "#FEF3C7", borderBottom: `1px solid #FDE68A`, padding: "9px 14px", textAlign: "center", fontSize: 12.5, color: C.amberDeep }}>
+          You can see live data here, but can't save changes yet — ask whoever owns this page to give you edit access (see Settings for details).
+        </div>
+      )}
+      <main style={{ maxWidth: 1100, margin: "0 auto", padding: "18px 16px 30px" }}>
         {view === "dashboard" && (
           <Dashboard
             session={session} employees={employees} attendance={attendance} settings={settings}
             empById={empById} today={today} goto={setView} sendReport={sendReport} leaves={leaves}
-            stockItems={stockItems} stockMovements={stockMovements} visitors={visitors} handoverRecords={handoverRecords}
+            stockItems={stockItems} stockMovements={stockMovements} visitors={visitors} handoverRecords={handoverRecords} incidents={incidents}
           />
         )}
         {view === "checkin" && (
@@ -1156,6 +1167,10 @@ function App() {
             persistHandoverItems={persist.handoverItems} persistHandoverRecords={persist.handoverRecords}
             settings={settings} persistSettings={persist.settings} notify={notify} />
         )}
+        {view === "incidents" && (
+          <IncidentsScreen session={session} incidents={incidents} persistIncidents={persist.incidents}
+            settings={settings} persistSettings={persist.settings} notify={notify} />
+        )}
         {view === "employees" && session.role === "admin" && (
           <EmployeesScreen employees={employees} persistEmployees={persist.employees} notify={notify} />
         )}
@@ -1173,7 +1188,7 @@ function App() {
               await persist.leaves(sample.leaves); await persist.visitors(sample.visitors);
               await persist.stockItems(sample.stockItems); await persist.stockMovements(sample.stockMovements);
               await persist.handoverItems(sample.handoverItems); await persist.handoverRecords(sample.handoverRecords);
-              await persist.settings(sample.settings);
+              await persist.incidents(sample.incidents); await persist.settings(sample.settings);
               setBusy(false);
               notify("Sample data loaded");
             }}
@@ -1185,26 +1200,54 @@ function App() {
               await persist.leaves(fresh.leaves); await persist.visitors(fresh.visitors);
               await persist.stockItems(fresh.stockItems); await persist.stockMovements(fresh.stockMovements);
               await persist.handoverItems(fresh.handoverItems); await persist.handoverRecords(fresh.handoverRecords);
-              await persist.settings(fresh.settings);
+              await persist.incidents(fresh.incidents); await persist.settings(fresh.settings);
               setBusy(false);
               notify("All data erased — starting fresh");
             }}
             busy={busy}
           />
         )}
-        </main>
-      </div>
+      </main>
+      <BottomNav view={view} setView={setView} role={session.role} />
     </div>
   );
 }
 
 /* ---------------------------------------------------------------------
-   SIDEBAR
-   Brand + sync status at top, nav list below, user info + logout at the
-   bottom. Icon-only rail on narrow phones, full labeled sidebar once
-   there's room (see the .gr-sidebar CSS rules in App).
+   HEADER + BOTTOM NAV
+   Aramex-branded top bar (red wordmark + "Gatehouse Register" subtitle)
+   with a bottom tab bar, icon + name on every tab.
 --------------------------------------------------------------------- */
-function Sidebar({ session, onLogout, syncMode, canWriteShared, view, setView, role }) {
+function Header({ session, onLogout, syncMode, canWriteShared }) {
+  const dotColor = syncMode === "firebase" ? "#10B981" : syncMode === "synced" ? (canWriteShared === false ? C.amberDeep : "#10B981") : C.ink50;
+  const syncLabel = syncMode === "firebase" ? "Synced via Firebase" : syncMode === "synced" ? (canWriteShared === false ? "Synced · read-only" : "Synced across devices") : "Local device only";
+
+  return (
+    <header className="no-print" style={{ background: "#fff", padding: "12px 16px", position: "sticky", top: 0, zIndex: 40, borderBottom: `3px solid ${C.aramexRed}`, boxShadow: "0 1px 3px rgba(15,23,42,0.06)" }}>
+      <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+        <div>
+          <div style={{ fontFamily: FONT_SANS, fontSize: 21, fontWeight: 800, color: C.aramexRed, letterSpacing: 0.5, lineHeight: 1.1 }}>ARAMEX</div>
+          <div style={{ fontFamily: FONT_SERIF, fontSize: 12.5, color: C.ink50, lineHeight: 1.1 }}>Gatehouse Register</div>
+          <div style={{ fontFamily: FONT_MONO, fontSize: 9.5, color: C.ink50, letterSpacing: 0.3, display: "flex", alignItems: "center", gap: 5, marginTop: 4 }}>
+            <span style={{ width: 5, height: 5, borderRadius: "50%", background: dotColor, display: "inline-block" }} />
+            {syncLabel.toUpperCase()}
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: C.ink }}>{session.name}</div>
+            <div style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: C.aramexRed }}>{session.role.toUpperCase()}</div>
+          </div>
+          <button onClick={onLogout} title="Log out" style={{ background: C.paperDim, border: "none", borderRadius: 7, padding: 8, cursor: "pointer", color: C.ink }}>
+            <LogOut size={17} />
+          </button>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function BottomNav({ view, setView, role }) {
   const items = [
     { id: "dashboard", label: "Dashboard", icon: Home, roles: ["admin", "guard"] },
     { id: "checkin", label: "Check In", icon: DoorOpen, roles: ["admin", "guard"] },
@@ -1215,61 +1258,31 @@ function Sidebar({ session, onLogout, syncMode, canWriteShared, view, setView, r
     { id: "visitors", label: "Visitors", icon: UserPlus, roles: ["admin", "guard"] },
     { id: "inventory", label: "Inventory", icon: Package, roles: ["admin", "guard"] },
     { id: "handover", label: "Handover", icon: RefreshCw, roles: ["admin", "guard"] },
+    { id: "incidents", label: "Incidents", icon: AlertTriangle, roles: ["admin", "guard"] },
     { id: "employees", label: "Employees", icon: Users, roles: ["admin"] },
     { id: "reports", label: "Reports", icon: BarChart3, roles: ["admin"] },
     { id: "settings", label: "Settings", icon: SettingsIcon, roles: ["admin"] },
   ].filter((i) => i.roles.includes(role));
 
-  const dotColor = syncMode === "firebase" ? "#34D399" : syncMode === "synced" ? (canWriteShared === false ? C.amber : "#34D399") : "rgba(255,255,255,0.55)";
-  const syncLabel = syncMode === "firebase" ? "Synced via Firebase" : syncMode === "synced" ? (canWriteShared === false ? "Synced · read-only" : "Synced across devices") : "Local device only";
-
   return (
-    <aside className="gr-sidebar no-print" style={{ background: `linear-gradient(180deg, ${C.navy}, ${C.slate})`, color: "#fff" }}>
-      <div style={{ padding: "18px 12px 16px", borderBottom: "1px solid rgba(255,255,255,0.14)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center" }}>
-          <div style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 9, background: C.amber, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <ShieldCheck size={19} color="#fff" />
-          </div>
-          <div className="gr-brand-text" style={{ minWidth: 0 }}>
-            <div style={{ fontFamily: FONT_SERIF, fontSize: 16, lineHeight: 1.15 }}>Gatehouse Register</div>
-          </div>
-        </div>
-        <div className="gr-brand-text" style={{ fontFamily: FONT_MONO, fontSize: 10, color: "rgba(255,255,255,0.75)", letterSpacing: 0.3, display: "flex", alignItems: "center", gap: 6, marginTop: 10, justifyContent: "center" }}>
-          <span style={{ width: 6, height: 6, borderRadius: "50%", background: dotColor, flexShrink: 0 }} />
-          {syncLabel.toUpperCase()}
-        </div>
-      </div>
-
-      <nav style={{ flex: 1, overflowY: "auto", padding: "10px 8px" }}>
-        {items.map((it) => {
-          const active = view === it.id;
-          return (
-            <button key={it.id} className="gr-navitem" onClick={() => setView(it.id)} style={{
-              width: "100%", display: "flex", alignItems: "center", gap: 12, borderRadius: 9, marginBottom: 2,
-              background: active ? "rgba(255,255,255,0.16)" : "transparent", border: "none", cursor: "pointer",
-              color: active ? "#fff" : "rgba(255,255,255,0.75)", fontSize: 13.5, fontWeight: 600,
-              borderLeft: active ? `3px solid ${C.amber}` : "3px solid transparent",
-            }}>
-              <it.icon size={18} style={{ flexShrink: 0 }} />
-              <span className="gr-label">{it.label}</span>
-            </button>
-          );
-        })}
-      </nav>
-
-      <div style={{ padding: "14px 12px", borderTop: "1px solid rgba(255,255,255,0.14)" }}>
-        <div className="gr-user-block" style={{ marginBottom: 10 }}>
-          <div style={{ fontSize: 13, fontWeight: 600 }}>{session.name}</div>
-          <div style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: C.amber }}>{session.role.toUpperCase()}</div>
-        </div>
-        <button onClick={onLogout} title="Log out" style={{
-          width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
-          background: "rgba(255,255,255,0.12)", border: "none", borderRadius: 7, padding: "9px 10px", cursor: "pointer", color: "#fff", fontSize: 12.5, fontWeight: 600,
-        }}>
-          <LogOut size={15} style={{ flexShrink: 0 }} /> <span className="gr-label">Log Out</span>
-        </button>
-      </div>
-    </aside>
+    <nav className="no-print" style={{
+      position: "fixed", bottom: 0, left: 0, right: 0, background: "#fff", borderTop: `1px solid ${C.line}`,
+      display: "flex", overflowX: "auto", zIndex: 40, boxShadow: "0 -4px 14px rgba(15,23,42,0.08)",
+    }}>
+      {items.map((it) => {
+        const active = view === it.id;
+        return (
+          <button key={it.id} onClick={() => setView(it.id)} style={{
+            flex: "1 0 auto", minWidth: 68, display: "flex", flexDirection: "column", alignItems: "center",
+            gap: 3, padding: "9px 8px 8px", background: "none", border: "none", cursor: "pointer",
+            color: active ? C.aramexRed : C.ink50, borderTop: active ? `2px solid ${C.aramexRed}` : "2px solid transparent",
+          }}>
+            <it.icon size={19} />
+            <span style={{ fontSize: 10.5, fontFamily: FONT_SANS, fontWeight: 600 }}>{it.label}</span>
+          </button>
+        );
+      })}
+    </nav>
   );
 }
 
@@ -1364,14 +1377,14 @@ function LoginScreen({ users, onLogin, notify, onResetAccounts }) {
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: C.navy, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20 }}>
+    <div style={{ minHeight: "100vh", background: `linear-gradient(180deg, ${C.navy}, ${C.slate})`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20 }}>
       <div style={{ width: "100%", maxWidth: 360 }}>
         <div style={{ textAlign: "center", marginBottom: 26 }}>
-          <div style={{ width: 54, height: 54, borderRadius: 12, background: C.amber, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px" }}>
-            <ShieldCheck size={28} color={C.ink} />
+          <div style={{ background: "#fff", borderRadius: 14, padding: "14px 10px", marginBottom: 14, boxShadow: "0 10px 30px rgba(0,0,0,0.25)" }}>
+            <div style={{ fontFamily: FONT_SANS, fontSize: 26, fontWeight: 800, color: C.aramexRed, letterSpacing: 0.5 }}>ARAMEX</div>
+            <div style={{ fontFamily: FONT_SERIF, fontSize: 14, color: C.ink50 }}>Gatehouse Register</div>
           </div>
-          <div style={{ fontFamily: FONT_SERIF, fontSize: 24, color: "#fff" }}>Gatehouse Register</div>
-          <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: "#8B96A8", letterSpacing: 0.5, marginTop: 3 }}>DIGITAL GATE ATTENDANCE · V1</div>
+          <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: "#C7CEDB", letterSpacing: 0.5 }}>DIGITAL GATE REGISTER · V2</div>
         </div>
 
         <div style={{ background: C.paper, borderRadius: 14, padding: 22, boxShadow: "0 20px 50px rgba(0,0,0,0.35)" }}>
@@ -1462,7 +1475,7 @@ function LoginScreen({ users, onLogin, notify, onResetAccounts }) {
 /* ---------------------------------------------------------------------
    DASHBOARD
 --------------------------------------------------------------------- */
-function Dashboard({ session, employees, attendance, settings, empById, today, goto, sendReport, leaves, stockItems, stockMovements, visitors, handoverRecords }) {
+function Dashboard({ session, employees, attendance, settings, empById, today, goto, sendReport, leaves, stockItems, stockMovements, visitors, handoverRecords, incidents }) {
   const todays = attendance.filter((a) => a.date === today);
   const inside = todays.filter((a) => a.status === "INSIDE");
   const checkedOutToday = todays.filter((a) => a.status === "CHECKED_OUT");
@@ -1478,6 +1491,8 @@ function Dashboard({ session, employees, attendance, settings, empById, today, g
   });
   const visitorsInside = (visitors || []).filter((v) => v.status === "INSIDE");
   const lowStockItems = (stockItems || []).filter((i) => i.active).map((i) => ({ ...i, level: stockLevel(i.id, stockMovements || []) })).filter((i) => i.level <= i.min_threshold);
+  const openIncidents = (incidents || []).filter((i) => i.status === "Open" || i.status === "Under Investigation");
+  const seriousOpenIncidents = openIncidents.filter((i) => i.severity === "High" || i.severity === "Critical");
 
   const channels = settings.report_channels || { attendance: defaultChannel(), security: defaultChannel(), inventory: defaultChannel() };
   const dueSections = session.role === "admin"
@@ -1541,6 +1556,20 @@ function Dashboard({ session, employees, attendance, settings, empById, today, g
           <Btn size="sm" tone="red" onClick={() => goto("inventory")}>View Inventory</Btn>
         </div>
       )}
+
+      {seriousOpenIncidents.length > 0 && (
+        <div style={{ background: "#FEE2E2", border: `1px solid #FECACA`, borderRadius: 10, padding: "12px 14px", marginBottom: 18, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <AlertTriangle size={18} color={C.redDeep} />
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 13.5, color: C.redDeep }}>{seriousOpenIncidents.length} high/critical incident(s) open</div>
+              <div style={{ fontSize: 12, color: C.ink50 }}>{seriousOpenIncidents.map((i) => i.type).join(", ")}</div>
+            </div>
+          </div>
+          <Btn size="sm" tone="red" onClick={() => goto("incidents")}>View Incidents</Btn>
+        </div>
+      )}
+
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 10, marginBottom: 22 }}>
         <StatCard label="Total Employees" value={activeEmployees.length} icon={Users} tone="navy" />
         <StatCard label="Checked In Today" value={todays.length} icon={DoorOpen} tone="green" />
@@ -1551,6 +1580,7 @@ function Dashboard({ session, employees, attendance, settings, empById, today, g
         <StatCard label="In Overtime" value={overtimeToday.length} icon={AlertTriangle} tone="amber" />
         <StatCard label="Visitors/Contractors Inside" value={visitorsInside.length} icon={UserPlus} tone="navy" />
         <StatCard label="Low Stock Items" value={lowStockItems.length} icon={Package} tone={lowStockItems.length ? "red" : "slate"} />
+        <StatCard label="Open Incidents" value={openIncidents.length} icon={AlertTriangle} tone={seriousOpenIncidents.length ? "red" : (openIncidents.length ? "amber" : "slate")} />
       </div>
 
       <SectionTitle title="Currently Inside" sub={`${inside.length} on site`} />
@@ -2603,7 +2633,7 @@ function HandoverScreen({ session, users, handoverItems, handoverRecords, persis
       `Incoming guard: ${record.incoming_guard_confirmed || record.incoming_guard_expected}`, "", "Missing / short:",
       ...missing.map((it) => it.type === "quantity" ? `- ${it.name}: ${it.actual_quantity ?? 0} / ${it.expected_quantity} expected` : `- ${it.name}: missing`),
       "", record.remarks_out ? `Outgoing notes: ${record.remarks_out}` : "", record.remarks_in ? `Incoming notes: ${record.remarks_in}` : "",
-      "", "Sent from the Gatehouse Register app.",
+      "", "Sent from the Aramex Gatehouse Register app.",
     ].filter(Boolean);
     const mailto = `mailto:${encodeURIComponent(alert.recipient_email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(lines.join("\n"))}`;
     const a = document.createElement("a"); a.href = mailto; a.target = "_blank";
@@ -2847,6 +2877,223 @@ function HandoverItemsManager({ items, persistItems, settings, persistSettings, 
         </div>
         <Btn size="sm" tone="navy" onClick={saveAlert}>Save</Btn>
       </div>
+    </Modal>
+  );
+}
+
+/* ---------------------------------------------------------------------
+   INCIDENT REPORTS
+   Anything out of the ordinary at the gate — theft, fire, altercation,
+   safety hazard, trespassing, and so on — with severity levels and an
+   immediate manager alert for anything serious, separate from the
+   scheduled reports.
+--------------------------------------------------------------------- */
+const INCIDENT_TYPES = ["Theft", "Fire", "Altercation / Dispute", "Safety Hazard", "Trespassing", "Medical Emergency", "Property Damage", "Suspicious Activity", "Other"];
+const INCIDENT_SEVERITIES = ["Low", "Medium", "High", "Critical"];
+const INCIDENT_STATUSES = ["Open", "Under Investigation", "Resolved", "Closed"];
+
+function severityTone(sev) {
+  if (sev === "Critical" || sev === "High") return "missing";
+  if (sev === "Medium") return "overtime";
+  return "neutral";
+}
+
+function IncidentsScreen({ session, incidents, persistIncidents, settings, persistSettings, notify }) {
+  const [tab, setTab] = useState("open");
+  const [showForm, setShowForm] = useState(false);
+  const [viewing, setViewing] = useState(null);
+  const [alertSettings, setAlertSettings] = useState(false);
+
+  const sorted = useMemo(() => [...incidents].sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time)), [incidents]);
+  const open = sorted.filter((i) => i.status === "Open" || i.status === "Under Investigation");
+  const list = tab === "open" ? open : sorted;
+
+  const report = async (data) => {
+    const now = new Date();
+    const rec = {
+      id: uid("inc_"), date: todayStr(now), time: nowTimeStr(now), ...data,
+      status: "Open", reported_by: session.name, resolved_by: null, resolution_notes: "",
+      created_at: Date.now(), updated_at: Date.now(),
+    };
+    await persistIncidents([rec, ...incidents]);
+    setShowForm(false);
+    notify("Incident reported");
+  };
+
+  const updateStatus = async (incident, status, resolutionNotes) => {
+    const updated = {
+      ...incident, status, updated_at: Date.now(),
+      resolution_notes: resolutionNotes != null ? resolutionNotes : incident.resolution_notes,
+      resolved_by: (status === "Resolved" || status === "Closed") ? session.name : incident.resolved_by,
+    };
+    await persistIncidents(incidents.map((i) => (i.id === incident.id ? updated : i)));
+    setViewing(updated);
+    notify("Incident updated");
+  };
+
+  const sendAlert = async (incident) => {
+    const alert = settings.incident_alert || { recipient_name: "", recipient_email: "" };
+    if (!alert.recipient_email) { notify("Add a manager's email in Alert Settings first", "error"); return; }
+    const subject = `[${incident.severity.toUpperCase()}] Incident: ${incident.type} — ${fmtDate(incident.date)}`;
+    const lines = [
+      `Incident Report`, `Type: ${incident.type}`, `Severity: ${incident.severity}`, `Date/Time: ${fmtDate(incident.date)} ${fmtTime(incident.time)}`,
+      `Location: ${incident.location || "—"}`, `Reported by: ${incident.reported_by}`, "",
+      `Description:`, incident.description || "—", "",
+      incident.people_involved ? `People involved: ${incident.people_involved}` : "",
+      incident.action_taken ? `Action taken: ${incident.action_taken}` : "",
+      "", "Sent from the Aramex Gatehouse Register app.",
+    ].filter(Boolean);
+    const mailto = `mailto:${encodeURIComponent(alert.recipient_email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(lines.join("\n"))}`;
+    const a = document.createElement("a"); a.href = mailto; a.target = "_blank";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    notify("Alert ready — check your email app");
+  };
+
+  return (
+    <div>
+      <SectionTitle title="Incident Reports" sub={`${open.length} open`} action={{ label: "+ Report Incident", onClick: () => setShowForm(true) }} />
+      {session.role === "admin" && (
+        <button onClick={() => setAlertSettings(true)} style={{ background: "none", border: "none", color: C.navy, fontSize: 12, fontWeight: 600, cursor: "pointer", textDecoration: "underline", marginBottom: 12, display: "block" }}>
+          Alert Settings
+        </button>
+      )}
+
+      <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+        {[["open", `Open (${open.length})`], ["all", "All"]].map(([k, label]) => (
+          <button key={k} onClick={() => setTab(k)} style={{
+            padding: "7px 12px", borderRadius: 20, fontSize: 12.5, fontWeight: 600, cursor: "pointer",
+            border: `1px solid ${tab === k ? C.navy : C.line}`, background: tab === k ? C.navy : "#fff", color: tab === k ? "#fff" : C.ink,
+          }}>{label}</button>
+        ))}
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {list.length === 0 ? <EmptyState icon={AlertTriangle} title={tab === "open" ? "No open incidents" : "No incidents reported yet"} /> : (
+          list.map((i) => (
+            <button key={i.id} onClick={() => setViewing(i)} style={{ textAlign: "left", background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, padding: "12px 14px", cursor: "pointer" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+                    <span style={{ fontWeight: 600, fontSize: 14, color: C.ink }}>{i.type}</span>
+                    <Badge tone={severityTone(i.severity)}>{i.severity.toUpperCase()}</Badge>
+                    <Badge tone="neutral">{i.status.toUpperCase()}</Badge>
+                  </div>
+                  <div style={{ fontSize: 12.5, color: C.ink50, marginTop: 3 }}>{i.location || "—"} · {fmtDate(i.date)} {fmtTime(i.time)}</div>
+                  <div style={{ fontSize: 12.5, color: C.ink, marginTop: 4 }}>{i.description}</div>
+                  <div style={{ fontSize: 11.5, color: C.ink50, marginTop: 4 }}>Reported by {i.reported_by}</div>
+                </div>
+                <ChevronRight size={16} color={C.ink50} style={{ flexShrink: 0 }} />
+              </div>
+            </button>
+          ))
+        )}
+      </div>
+
+      {showForm && <IncidentForm onClose={() => setShowForm(false)} onSave={report} />}
+      {viewing && (
+        <IncidentDetailModal incident={viewing} onClose={() => setViewing(null)} onUpdateStatus={updateStatus} onAlert={sendAlert} />
+      )}
+      {alertSettings && (
+        <IncidentAlertSettings settings={settings} persistSettings={persistSettings} notify={notify} onClose={() => setAlertSettings(false)} />
+      )}
+    </div>
+  );
+}
+
+function IncidentForm({ onClose, onSave }) {
+  const [type, setType] = useState(INCIDENT_TYPES[0]);
+  const [severity, setSeverity] = useState("Low");
+  const [location, setLocation] = useState("");
+  const [description, setDescription] = useState("");
+  const [peopleInvolved, setPeopleInvolved] = useState("");
+  const [actionTaken, setActionTaken] = useState("");
+
+  const save = () => {
+    if (!description.trim()) return;
+    onSave({ type, severity, location: location.trim(), description: description.trim(), people_involved: peopleInvolved.trim(), action_taken: actionTaken.trim() });
+  };
+
+  return (
+    <Modal title="Report Incident" onClose={onClose} wide>
+      <Field label="Type">
+        <select style={inputStyle} value={type} onChange={(e) => setType(e.target.value)}>
+          {INCIDENT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
+      </Field>
+      <Field label="Severity">
+        <div style={{ display: "flex", gap: 6 }}>
+          {INCIDENT_SEVERITIES.map((s) => (
+            <button key={s} type="button" onClick={() => setSeverity(s)} style={{
+              flex: 1, padding: "8px 6px", borderRadius: 8, fontSize: 12.5, fontWeight: 600, cursor: "pointer",
+              border: `1px solid ${severity === s ? C.navy : C.line}`, background: severity === s ? C.navy : "#fff", color: severity === s ? "#fff" : C.ink,
+            }}>{s}</button>
+          ))}
+        </div>
+      </Field>
+      <Field label="Location"><input style={inputStyle} value={location} onChange={(e) => setLocation(e.target.value)} placeholder="e.g. Main Gate, Loading Bay 2" /></Field>
+      <Field label="Description"><textarea style={{ ...inputStyle, minHeight: 80 }} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What happened?" /></Field>
+      <Field label="People Involved (optional)"><input style={inputStyle} value={peopleInvolved} onChange={(e) => setPeopleInvolved(e.target.value)} /></Field>
+      <Field label="Immediate Action Taken (optional)"><input style={inputStyle} value={actionTaken} onChange={(e) => setActionTaken(e.target.value)} /></Field>
+      <Btn full tone="red" icon={AlertTriangle} onClick={save} disabled={!description.trim()}>Submit Report</Btn>
+    </Modal>
+  );
+}
+
+function IncidentDetailModal({ incident, onClose, onUpdateStatus, onAlert }) {
+  const [notes, setNotes] = useState(incident.resolution_notes || "");
+
+  return (
+    <Modal title={incident.type} onClose={onClose} wide>
+      <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+        <Badge tone={severityTone(incident.severity)}>{incident.severity.toUpperCase()}</Badge>
+        <Badge tone="neutral">{incident.status.toUpperCase()}</Badge>
+      </div>
+      <div style={{ fontSize: 12.5, color: C.ink50, marginBottom: 10 }}>
+        {incident.location || "—"} · {fmtDate(incident.date)} {fmtTime(incident.time)} · Reported by {incident.reported_by}
+      </div>
+      <div style={{ fontSize: 13.5, color: C.ink, marginBottom: 10, lineHeight: 1.5 }}>{incident.description}</div>
+      {incident.people_involved && <div style={{ fontSize: 12.5, color: C.ink50, marginBottom: 6 }}>People involved: {incident.people_involved}</div>}
+      {incident.action_taken && <div style={{ fontSize: 12.5, color: C.ink50, marginBottom: 6 }}>Action taken: {incident.action_taken}</div>}
+
+      {(incident.severity === "High" || incident.severity === "Critical") && incident.status !== "Closed" && (
+        <div style={{ background: "#FEE2E2", borderRadius: 8, padding: "9px 11px", marginBottom: 14, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+          <span style={{ fontSize: 12.5, color: C.redDeep, fontWeight: 600 }}>{incident.severity} severity — consider alerting a manager</span>
+          <Btn size="sm" tone="red" onClick={() => onAlert(incident)}>Alert Manager</Btn>
+        </div>
+      )}
+
+      <div style={{ borderTop: `1px dashed ${C.line}`, paddingTop: 14 }}>
+        <Field label="Resolution notes"><textarea style={{ ...inputStyle, minHeight: 60 }} value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
+        <div style={{ fontSize: 12.5, fontWeight: 600, color: C.ink50, marginBottom: 8 }}>Update status</div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {INCIDENT_STATUSES.map((s) => (
+            <button key={s} type="button" onClick={() => onUpdateStatus(incident, s, notes)} style={{
+              padding: "7px 12px", borderRadius: 20, fontSize: 12.5, fontWeight: 600, cursor: "pointer",
+              border: `1px solid ${incident.status === s ? C.navy : C.line}`, background: incident.status === s ? C.navy : "#fff", color: incident.status === s ? "#fff" : C.ink,
+            }}>{s}</button>
+          ))}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function IncidentAlertSettings({ settings, persistSettings, notify, onClose }) {
+  const alert0 = settings.incident_alert || { recipient_name: "", recipient_email: "" };
+  const [form, setForm] = useState(alert0);
+
+  const save = async () => {
+    await persistSettings({ ...settings, incident_alert: form });
+    notify("Incident alert settings saved");
+    onClose();
+  };
+
+  return (
+    <Modal title="Incident Alert Settings" onClose={onClose}>
+      <p style={{ fontSize: 12.5, color: C.ink50, marginTop: 0 }}>Who gets the "Alert Manager" email for High or Critical severity incidents.</p>
+      <Field label="Manager's name"><input style={inputStyle} value={form.recipient_name} onChange={(e) => setForm((f) => ({ ...f, recipient_name: e.target.value }))} /></Field>
+      <Field label="Manager's email"><input type="email" style={inputStyle} value={form.recipient_email} onChange={(e) => setForm((f) => ({ ...f, recipient_email: e.target.value }))} /></Field>
+      <Btn full tone="navy" onClick={save}>Save</Btn>
     </Modal>
   );
 }
