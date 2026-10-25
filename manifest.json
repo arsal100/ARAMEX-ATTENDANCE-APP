@@ -8,18 +8,6 @@
   "orientation": "portrait",
   "background_color": "#ffffff",
   "theme_color": "#e30613",
- 
-{
-  "name": "Aramex Gate House Register",
-  "short_name": "Gate House",
-  "description": "Aramex Gate House Register",
-  "start_url": "./",
-  "scope": "./",
-  "display": "standalone",
-  "orientation": "portrait",
-  "background_color": "#ffffff",
-  "theme_color": "#e30613",
-
   "icons": [
     {
       "src": "./aramex-gate-house-register-192.png",
