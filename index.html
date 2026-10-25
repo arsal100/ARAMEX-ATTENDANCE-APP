@@ -3,16 +3,51 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+
 <title>Aramex Gatehouse Register</title>
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@400;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>
-  html, body { margin: 0; padding: 0; background: #F8FAFC; }
-  #root { min-height: 100vh; }
-  #boot-fallback { min-height: 100vh; display: flex; align-items: center; justify-content: center;
-    font-family: Inter, system-ui, sans-serif; color: #6B7280; flex-direction: column; gap: 10px; text-align: center; padding: 20px; }
-</style>
 
+<!-- PWA -->
+<link rel="manifest" href="./manifest.json">
+
+<meta name="theme-color" content="#E30613">
+
+<link rel="icon" type="image/png" sizes="192x192"
+      href="./aramex-gate-house-register-192.png">
+
+<link rel="apple-touch-icon" sizes="192x192"
+      href="./aramex-gate-house-register-192.png">
+
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Gate House">
+
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #F8FAFC;
+  }
+
+  #root {
+    min-height: 100vh;
+  }
+
+  #boot-fallback {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: Inter, system-ui, sans-serif;
+    color: #6B7280;
+    flex-direction: column;
+    gap: 10px;
+    text-align: center;
+    padding: 20px;
+  }
+</style>
 <script crossorigin src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7/babel.min.js"></script>
