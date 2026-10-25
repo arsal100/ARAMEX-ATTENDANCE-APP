@@ -1,77 +1,37 @@
+const CACHE_NAME = "aramex-gate-house-v1";
 
-const CACHE_NAME = "aramex109-gatehouse-v1";
-
-
-const APP_SHELL = [
+const APP_FILES = [
   "./",
   "./index.html",
   "./manifest.json",
-  "./icon-192.png",
-  "./icon-512.png"
+  "./aramex-gate-house-register-192.png",
+  "./aramex-gate-house-register-512.png"
 ];
 
-
-self.addEventListener("install", (event) => {
+self.addEventListener("install", event => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then(async (cache) => {
-      for (const url of APP_SHELL) {
-        try {
-          const response = await fetch(url, { cache: "no-cache" });
-          if (response.ok) {
-            await cache.put(url, response);
-          }
-        } catch (error) {
-          // Skip unavailable files during installation.
-        }
-      }
-    }).then(() => self.skipWaiting())
+    caches.open(CACHE_NAME).then(cache => cache.addAll(APP_FILES))
   );
+  self.skipWaiting();
 });
 
-self.addEventListener("activate", (event) => {
+self.addEventListener("activate", event => {
   event.waitUntil(
-    caches.keys().then((keys) =>
+    caches.keys().then(keys =>
       Promise.all(
         keys
-          .filter((key) => key.startsWith("aramex109-gatehouse-") &&
-                           key !== CACHE_NAME)
-          .map((key) => caches.delete(key))
+          .filter(key => key !== CACHE_NAME)
+          .map(key => caches.delete(key))
       )
-    ).then(() => self.clients.claim())
+    )
   );
+  self.clients.claim();
 });
 
-self.addEventListener("fetch", (event) => {
-  const request = event.request;
-  const url = new URL(request.url);
-
-  // Never intercept Firebase, authentication, or other external requests.
-  if (url.origin !== self.location.origin) return;
-
-  // Only serve cached app-shell files for navigation and GET requests.
-  if (request.method !== "GET") return;
-
- const isAppShell =
-    url.pathname === new URL("./", self.location.href).pathname ||
-    url.pathname === new URL("./index.html", self.location.href).pathname ||
-    url.pathname === new URL("./manifest.json", self.location.href).pathname ||
-    url.pathname === new URL("./icon-192.png", self.location.href).pathname ||
-    url.pathname === new URL("./icon-512.png", self.location.href).pathname;
-  if (!isAppShell) return;
-
+self.addEventListener("fetch", event => {
   event.respondWith(
-    fetch(request).then((response) => {
-      if (response.ok) {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then((cache) =>
-          cache.put(request, copy)
-        );
-      }
-      return response;
-    }).catch(async () => {
-      const cached = await caches.match(request);
-      if (cached) return cached;
-      throw new Error("Offline and no cached app file is available.");
+    caches.match(event.request).then(cached => {
+      return cached || fetch(event.request);
     })
   );
 });
