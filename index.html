@@ -3,51 +3,16 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
-
 <title>Aramex Gatehouse Register</title>
-
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@400;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-
-<!-- PWA -->
-<link rel="manifest" href="./manifest.json">
-
-<meta name="theme-color" content="#E30613">
-
-<link rel="icon" type="image/png" sizes="192x192"
-      href="./aramex-gate-house-register-192.png">
-
-<link rel="apple-touch-icon" sizes="192x192"
-      href="./aramex-gate-house-register-192.png">
-
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Gate House">
-
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@400;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  html, body {
-    margin: 0;
-    padding: 0;
-    background: #F8FAFC;
-  }
-
-  #root {
-    min-height: 100vh;
-  }
-
-  #boot-fallback {
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-family: Inter, system-ui, sans-serif;
-    color: #6B7280;
-    flex-direction: column;
-    gap: 10px;
-    text-align: center;
-    padding: 20px;
-  }
+  html, body { margin: 0; padding: 0; background: #F8FAFC; }
+  #root { min-height: 100vh; }
+  #boot-fallback { min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    font-family: Inter, system-ui, sans-serif; color: #6B7280; flex-direction: column; gap: 10px; text-align: center; padding: 20px; }
 </style>
+
 <script crossorigin src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7/babel.min.js"></script>
@@ -498,13 +463,16 @@ async function initFirebaseDb(config) {
    sample attendance, available from Settings for testing/demo purposes.
 --------------------------------------------------------------------- */
 async function buildAccounts() {
-  const guard1pw = await sha256("guard123");
-  const guard2pw = await sha256("guard123");
   const adminpw = await sha256("manager123");
+  const guardPw = await sha256("guard123");
   return [
-    { id: "u_admin", name: "Mr Shihabuddin", username: "shihabuddin", passwordHash: adminpw, role: "admin", active: true, created_at: Date.now() },
-    { id: "u_g1", name: "Arslan Ahmed", username: "arslan", passwordHash: guard1pw, role: "guard", active: true, created_at: Date.now() },
-    { id: "u_g2", name: "Amir Hamja", username: "amir", passwordHash: guard2pw, role: "guard", active: true, created_at: Date.now() },
+    { id: "u_admin", name: "Hasrat Murshad Raza", username: "hasrat", passwordHash: adminpw, role: "admin", active: true, created_at: Date.now() },
+    { id: "u_109_g1", name: "Arslan Ahmed", username: "arslan109", passwordHash: guardPw, role: "guard", active: true, created_at: Date.now() },
+    { id: "u_109_g2", name: "Amir Hamja", username: "amir109", passwordHash: guardPw, role: "guard", active: true, created_at: Date.now() },
+    { id: "u_102_g1", name: "Guard 1 (Chamber 102)", username: "guard1_102", passwordHash: guardPw, role: "guard", active: true, created_at: Date.now() },
+    { id: "u_102_g2", name: "Guard 2 (Chamber 102)", username: "guard2_102", passwordHash: guardPw, role: "guard", active: true, created_at: Date.now() },
+    { id: "u_101_g1", name: "Guard 1 (Chamber 101)", username: "guard1_101", passwordHash: guardPw, role: "guard", active: true, created_at: Date.now() },
+    { id: "u_101_g2", name: "Guard 2 (Chamber 101)", username: "guard2_101", passwordHash: guardPw, role: "guard", active: true, created_at: Date.now() },
   ];
 }
 function defaultChannel() {
@@ -1099,7 +1067,7 @@ function App() {
   const fixLoginAccounts = useCallback(async () => {
     const accounts = await buildAccounts();
     await persist.users(accounts);
-    notify("Login accounts reset. Try shihabuddin / manager123, arslan / guard123, or amir / guard123.");
+    notify("Login accounts reset to defaults — see Settings → Guard & Admin Accounts for the full list.");
   }, [notify]);
   const empById = useMemo(() => Object.fromEntries(employees.map((e) => [e.id, e])), [employees]);
   const today = todayStr();
@@ -1379,6 +1347,17 @@ function FirebaseConnectPanel({ onConnected, initial }) {
   );
 }
 
+function GuardShieldIcon({ color = C.aramexRed, size = 26 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <path d="M12 2l8 3v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V5l8-3z" fill="#fff" stroke={color} strokeWidth="1.6" strokeLinejoin="round" />
+      <path d="M9.1 8c0-1.1 1.1-2 2.9-2s2.9 .9 2.9 2" fill={color} />
+      <circle cx="12" cy="9.6" r="2" fill={color} />
+      <path d="M8.4 15.3c0-1.9 1.6-3.3 3.6-3.3s3.6 1.4 3.6 3.3" fill={color} />
+    </svg>
+  );
+}
+
 function LoginScreen({ users, onLogin, notify, onResetAccounts }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -1389,6 +1368,19 @@ function LoginScreen({ users, onLogin, notify, onResetAccounts }) {
   const [showFbConnect, setShowFbConnect] = useState(false);
   const [fbJustConnected, setFbJustConnected] = useState(false);
   const alreadyConnected = !!getSavedFirebaseConfig();
+  const [expandedChamber, setExpandedChamber] = useState(null);
+
+  const chambers = [
+    { id: "109", color: C.aramexRed, title: "Chamber 109", subtitle: "Arslan & Hamja", guards: [
+      { u: "arslan109", p: "guard123", label: "Arslan Ahmed" }, { u: "amir109", p: "guard123", label: "Amir Hamja" },
+    ] },
+    { id: "102", color: "#2563EB", title: "Chamber 102", subtitle: "Guard 1 & Guard 2", guards: [
+      { u: "guard1_102", p: "guard123", label: "Guard 1" }, { u: "guard2_102", p: "guard123", label: "Guard 2" },
+    ] },
+    { id: "101", color: "#10B981", title: "Chamber 101", subtitle: "Guard 1 & Guard 2", guards: [
+      { u: "guard1_101", p: "guard123", label: "Guard 1" }, { u: "guard2_101", p: "guard123", label: "Guard 2" },
+    ] },
+  ];
 
   const doLogin = async (u, p) => {
     setError("");
@@ -1412,95 +1404,142 @@ function LoginScreen({ users, onLogin, notify, onResetAccounts }) {
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: `linear-gradient(180deg, ${C.navy}, ${C.slate})`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div style={{ width: "100%", maxWidth: 360 }}>
-        <div style={{ textAlign: "center", marginBottom: 26 }}>
-          <div style={{ background: "#fff", borderRadius: 14, padding: "14px 10px", marginBottom: 14, boxShadow: "0 10px 30px rgba(0,0,0,0.25)" }}>
-            <div style={{ fontFamily: FONT_SANS, fontSize: 26, fontWeight: 800, color: C.aramexRed, letterSpacing: 0.5 }}>ARAMEX</div>
-            <div style={{ fontFamily: FONT_SERIF, fontSize: 14, color: C.ink50 }}>Gatehouse Register</div>
+    <div style={{ minHeight: "100vh", background: "#F1F5F9", position: "relative", overflow: "hidden", padding: "36px 16px" }}>
+      <div style={{ position: "absolute", top: 0, left: 0, width: 70, height: 70, background: C.aramexRed, clipPath: "polygon(0 0, 100% 0, 0 100%)" }} />
+      <div style={{ position: "absolute", bottom: 0, right: 0, width: 90, height: 90, background: C.aramexRed, clipPath: "polygon(100% 100%, 0 100%, 100% 0)" }} />
+
+      <div style={{ position: "relative", zIndex: 1, width: "100%", maxWidth: 400, margin: "0 auto" }}>
+        <div style={{ textAlign: "center", marginBottom: 22 }}>
+          <div style={{ fontFamily: FONT_SANS, fontSize: 40, fontWeight: 800, color: C.aramexRed, letterSpacing: -0.5, lineHeight: 1, textTransform: "lowercase", marginBottom: 14 }}>aramex</div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, marginBottom: 8 }}>
+            <GuardShieldIcon size={34} />
+            <div style={{ fontFamily: FONT_SANS, fontSize: 25, fontWeight: 800, color: C.ink }}>Gatehouse Register</div>
           </div>
-          <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: "#C7CEDB", letterSpacing: 0.5 }}>DIGITAL GATE REGISTER · V2</div>
+          <div style={{ fontFamily: FONT_SANS, fontSize: 11.5, color: C.ink50, letterSpacing: 2, fontWeight: 600 }}>
+            SECURITY <span style={{ color: C.line }}>•</span> ACCESS <span style={{ color: C.line }}>•</span> CONTROL
+          </div>
+          <div style={{ width: 46, height: 2.5, background: C.aramexRed, borderRadius: 2, margin: "6px auto 14px" }} />
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
+            <span style={{ width: 34, height: 1, background: C.line }} />
+            <span style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: C.ink50, letterSpacing: 1.5 }}>DIGITAL GATE REGISTER · V2.0</span>
+            <span style={{ width: 34, height: 1, background: C.line }} />
+          </div>
         </div>
 
-        <div style={{ background: C.paper, borderRadius: 14, padding: 22, boxShadow: "0 20px 50px rgba(0,0,0,0.35)" }}>
+        <div style={{ background: "#fff", borderRadius: 18, padding: 24, boxShadow: "0 20px 50px rgba(15,23,42,0.14)" }}>
+          <div style={{ fontFamily: FONT_SANS, fontSize: 24, fontWeight: 800, color: C.ink, marginBottom: 2 }}>Welcome Back</div>
+          <div style={{ fontSize: 13.5, color: C.ink50, marginBottom: 18 }}>Please log in to continue</div>
+
           <form onSubmit={(e) => { e.preventDefault(); doLogin(username, password); }}>
-            <Field label="Username">
-              <input style={inputStyle} value={username} onChange={(e) => setUsername(e.target.value)} placeholder="e.g. arslan" autoFocus autoCapitalize="none" autoCorrect="off" />
-            </Field>
-            <Field label="Password">
-              <div style={{ position: "relative" }}>
-                <input style={{ ...inputStyle, paddingRight: 38 }} type={show ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" autoCapitalize="none" autoCorrect="off" />
-                <button type="button" onClick={() => setShow((s) => !s)} style={{ position: "absolute", right: 8, top: 8, background: "none", border: "none", color: C.ink50, cursor: "pointer" }}>
+            <div style={{ position: "relative", marginBottom: 12 }}>
+              <div style={{ position: "absolute", left: 12, top: 11, color: C.ink50 }}><Users size={16} /></div>
+              <div style={{ border: `1px solid ${C.line}`, borderRadius: 9, padding: "8px 12px 8px 36px" }}>
+                <div style={{ fontSize: 11, color: C.ink50, marginBottom: 1 }}>Username</div>
+                <input style={{ border: "none", outline: "none", width: "100%", fontSize: 14.5, fontFamily: FONT_SANS, padding: 0, background: "transparent" }}
+                  value={username} onChange={(e) => setUsername(e.target.value)} placeholder="e.g. arslan109" autoFocus autoCapitalize="none" autoCorrect="off" />
+              </div>
+            </div>
+            <div style={{ position: "relative", marginBottom: 12 }}>
+              <div style={{ position: "absolute", left: 12, top: 11, color: C.ink50 }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+              <div style={{ border: `1px solid ${C.line}`, borderRadius: 9, padding: "8px 38px 8px 36px", position: "relative" }}>
+                <div style={{ fontSize: 11, color: C.ink50, marginBottom: 1 }}>Password</div>
+                <input style={{ border: "none", outline: "none", width: "100%", fontSize: 14.5, fontFamily: FONT_SANS, padding: 0, background: "transparent" }}
+                  type={show ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" autoCapitalize="none" autoCorrect="off" />
+                <button type="button" onClick={() => setShow((s) => !s)} style={{ position: "absolute", right: 10, top: 20, background: "none", border: "none", color: C.ink50, cursor: "pointer" }}>
                   {show ? <EyeOff size={17} /> : <Eye size={17} />}
                 </button>
               </div>
-            </Field>
+            </div>
             {error && (
-              <div style={{ background: "#F7E7E5", color: C.redDeep, border: `1px solid #E9C3BE`, borderRadius: 8, padding: "9px 11px", fontSize: 13, marginBottom: 12, display: "flex", alignItems: "center", gap: 7 }}>
+              <div style={{ background: "#FEE2E2", color: C.redDeep, border: `1px solid #FECACA`, borderRadius: 8, padding: "9px 11px", fontSize: 13, marginBottom: 12, display: "flex", alignItems: "center", gap: 7 }}>
                 <AlertTriangle size={15} style={{ flexShrink: 0 }} /> {error}
               </div>
             )}
-            <div style={{ marginTop: 4 }}>
-              <Btn full tone="amber" size="lg" icon={LogIn} type="submit" disabled={busy} onClick={(e) => { e.preventDefault(); doLogin(username, password); }}>{busy ? "Signing in…" : "Log In"}</Btn>
-            </div>
+            <Btn full tone="red" size="lg" icon={LogIn} type="submit" disabled={busy} onClick={(e) => { e.preventDefault(); doLogin(username, password); }}>{busy ? "Signing in…" : "Log In"}</Btn>
           </form>
 
-          <div style={{ marginTop: 18, paddingTop: 14, borderTop: `1px dashed ${C.line}` }}>
-            <div style={{ fontSize: 11.5, color: C.ink50, marginBottom: 8, fontFamily: FONT_SANS, fontWeight: 600 }}>DEMO ACCOUNTS</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {[
-                { u: "arslan", p: "guard123", label: "Security Guard — Arslan Ahmed" },
-                { u: "amir", p: "guard123", label: "Security Guard — Amir Hamja" },
-                { u: "shihabuddin", p: "manager123", label: "Manager / Admin — Mr Shihabuddin" },
-              ].map((d) => (
-                <button key={d.u} onClick={() => { setUsername(d.u); setPassword(d.p); doLogin(d.u, d.p); }}
-                  style={{ textAlign: "left", background: "#fff", border: `1px solid ${C.line}`, borderRadius: 8, padding: "8px 10px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontSize: 13, color: C.ink }}>{d.label}</span>
-                  <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.ink50 }}>{d.u}</span>
-                </button>
+          <div style={{ marginTop: 20, paddingTop: 16, borderTop: `1px solid ${C.line}` }}>
+            <div style={{ textAlign: "center", fontSize: 11.5, color: C.ink50, fontWeight: 700, letterSpacing: 1, marginBottom: 10 }}>DEMO ACCOUNTS</div>
+            <div style={{ border: `1px solid ${C.line}`, borderRadius: 10, overflow: "hidden" }}>
+              {chambers.map((c, idx) => (
+                <div key={c.id} style={{ borderTop: idx > 0 ? `1px solid ${C.line}` : "none" }}>
+                  <button type="button" onClick={() => setExpandedChamber(expandedChamber === c.id ? null : c.id)} style={{
+                    width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "11px 12px", background: "#fff", border: "none", cursor: "pointer", textAlign: "left",
+                  }}>
+                    <GuardShieldIcon color={c.color} size={28} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14.5, fontWeight: 700, color: C.ink }}>{c.title}</div>
+                      <div style={{ fontSize: 12, color: C.ink50 }}>{c.subtitle}</div>
+                    </div>
+                    <ChevronRight size={16} color={C.ink50} style={{ transform: expandedChamber === c.id ? "rotate(90deg)" : "none", transition: "transform 0.15s", flexShrink: 0 }} />
+                  </button>
+                  {expandedChamber === c.id && (
+                    <div style={{ padding: "0 12px 10px", display: "flex", flexDirection: "column", gap: 6 }}>
+                      {c.guards.map((g) => (
+                        <button key={g.u} type="button" onClick={() => { setUsername(g.u); setPassword(g.p); doLogin(g.u, g.p); }} style={{
+                          display: "flex", justifyContent: "space-between", alignItems: "center", background: C.paperDim, border: "none",
+                          borderRadius: 7, padding: "8px 10px", cursor: "pointer", textAlign: "left",
+                        }}>
+                          <span style={{ fontSize: 13, color: C.ink }}>{g.label}</span>
+                          <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.ink50 }}>{g.u}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
+            <button type="button" onClick={() => { setUsername("hasrat"); setPassword("manager123"); doLogin("hasrat", "manager123"); }} style={{
+              width: "100%", marginTop: 8, display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "#fff",
+              border: `1px solid ${C.line}`, borderRadius: 10, cursor: "pointer", textAlign: "left",
+            }}>
+              <GuardShieldIcon color={C.navy} size={24} />
+              <div>
+                <div style={{ fontSize: 13.5, fontWeight: 700, color: C.ink }}>Manager</div>
+                <div style={{ fontSize: 11.5, color: C.ink50 }}>Hasrat Murshad Raza</div>
+              </div>
+            </button>
           </div>
 
-          <div style={{ marginTop: 16, textAlign: "center" }}>
-            {!confirmingReset ? (
-              <button type="button" onClick={() => setConfirmingReset(true)} style={{ background: "none", border: "none", color: C.ink50, fontSize: 12, textDecoration: "underline", cursor: "pointer" }}>
-                Trouble logging in? Reset login accounts
-              </button>
-            ) : (
-              <div style={{ background: "#FCEFE0", border: `1px solid #F2D6A6`, borderRadius: 8, padding: "10px 12px", textAlign: "left" }}>
-                <div style={{ fontSize: 12.5, color: C.ink, marginBottom: 8 }}>
-                  This resets the shihabuddin/arslan/amir accounts back to their defaults (manager123 / guard123). Any employees or attendance you've already entered are kept.
-                </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button type="button" onClick={() => setConfirmingReset(false)} style={{ flex: 1, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 6, padding: "6px 10px", fontSize: 12.5, cursor: "pointer" }}>Cancel</button>
-                  <button type="button" onClick={async () => { await onResetAccounts(); setConfirmingReset(false); setUsername("shihabuddin"); setPassword("manager123"); }} style={{ flex: 1, background: C.amberDeep, color: "#fff", border: "none", borderRadius: 6, padding: "6px 10px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>Reset Accounts</button>
-                </div>
-              </div>
-            )}
+          <div style={{ marginTop: 18, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+            <button type="button" onClick={() => setShowFbConnect((s) => !s)} style={{ background: "none", border: "none", color: C.ink50, fontSize: 12, textDecoration: "underline", cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+              <Package size={14} /> Trouble logging in?
+            </button>
+            <button type="button" onClick={() => setConfirmingReset((s) => !s)} style={{ background: "none", border: "none", color: C.ink50, fontSize: 12, textDecoration: "underline", cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+              <RefreshCw size={13} /> Reset login accounts
+            </button>
           </div>
 
-          <div style={{ marginTop: 10, textAlign: "center" }}>
-            {fbJustConnected ? (
-              <div style={{ background: "#EAF4EC", border: `1px solid #BFE0C9`, borderRadius: 8, padding: "10px 12px", textAlign: "left" }}>
-                <div style={{ fontSize: 12.5, color: C.greenDeep, marginBottom: 8 }}>Connected. Reload this page for it to take effect.</div>
-                <Btn full size="sm" tone="green" icon={RefreshCw} onClick={() => window.location.reload()}>Reload Now</Btn>
+          {confirmingReset && (
+            <div style={{ background: "#FEF3C7", border: `1px solid #FDE68A`, borderRadius: 8, padding: "10px 12px", textAlign: "left", marginTop: 10 }}>
+              <div style={{ fontSize: 12.5, color: C.ink, marginBottom: 8 }}>
+                This resets all 7 accounts (manager + 6 guards) back to their defaults — manager123 for Hasrat, guard123 for every guard. Any employees or attendance you've already entered are kept.
               </div>
-            ) : !showFbConnect ? (
-              <button type="button" onClick={() => setShowFbConnect(true)} style={{ background: "none", border: "none", color: C.ink50, fontSize: 12, textDecoration: "underline", cursor: "pointer" }}>
-                {alreadyConnected ? "Change shared database connection" : "Guard or manager on a new phone? Connect to the shared database"}
-              </button>
-            ) : (
-              <div style={{ background: "#F3F6FA", border: `1px solid ${C.line}`, borderRadius: 8, padding: "12px", textAlign: "left" }}>
-                <div style={{ fontSize: 12.5, color: C.ink, marginBottom: 10, lineHeight: 1.5 }}>
-                  This connects <i>this device</i> to the same shared data everyone else uses. Ask your admin for the
-                  connection code — this is separate from your username and password.
-                </div>
-                <FirebaseConnectPanel onConnected={() => setFbJustConnected(true)} />
-                <button type="button" onClick={() => setShowFbConnect(false)} style={{ background: "none", border: "none", color: C.ink50, fontSize: 11.5, marginTop: 10, cursor: "pointer", textDecoration: "underline" }}>Cancel</button>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button type="button" onClick={() => setConfirmingReset(false)} style={{ flex: 1, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 6, padding: "6px 10px", fontSize: 12.5, cursor: "pointer" }}>Cancel</button>
+                <button type="button" onClick={async () => { await onResetAccounts(); setConfirmingReset(false); setUsername("hasrat"); setPassword("manager123"); }} style={{ flex: 1, background: C.amberDeep, color: "#fff", border: "none", borderRadius: 6, padding: "6px 10px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>Reset Accounts</button>
               </div>
-            )}
-          </div>
+            </div>
+          )}
+
+          {showFbConnect && (
+            <div style={{ background: "#F3F6FA", border: `1px solid ${C.line}`, borderRadius: 8, padding: "12px", textAlign: "left", marginTop: 10 }}>
+              {fbJustConnected ? (
+                <>
+                  <div style={{ fontSize: 12.5, color: C.greenDeep, marginBottom: 8 }}>Connected. Reload this page for it to take effect.</div>
+                  <Btn full size="sm" tone="green" icon={RefreshCw} onClick={() => window.location.reload()}>Reload Now</Btn>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 12.5, color: C.ink, marginBottom: 10, lineHeight: 1.5 }}>
+                    This connects <i>this device</i> to the same shared data everyone else uses — {alreadyConnected ? "change the connection" : "ask your admin for the connection code"}. This is separate from your username and password.
+                  </div>
+                  <FirebaseConnectPanel onConnected={() => setFbJustConnected(true)} />
+                </>
+              )}
+              <button type="button" onClick={() => setShowFbConnect(false)} style={{ background: "none", border: "none", color: C.ink50, fontSize: 11.5, marginTop: 10, cursor: "pointer", textDecoration: "underline" }}>Cancel</button>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -2446,12 +2485,25 @@ function InventoryScreen({ session, stockItems, stockMovements, persistStockItem
   const itemById = useMemo(() => Object.fromEntries(stockItems.map((i) => [i.id, i])), [stockItems]);
 
   const addItem = async (data) => {
-    await persistStockItems([{ id: uid("si_"), ...data, active: true, created_at: Date.now() }, ...stockItems]);
-    notify(`${data.name} added`);
+    const { starting_quantity, ...itemFields } = data;
+    const newItem = { id: uid("si_"), ...itemFields, active: true, created_at: Date.now() };
+    await persistStockItems([newItem, ...stockItems]);
+    const qty = Number(starting_quantity) || 0;
+    if (qty > 0) {
+      const now = new Date();
+      const rec = {
+        id: uid("sm_"), item_id: newItem.id, type: "IN", quantity: qty, date: todayStr(now), time: nowTimeStr(now),
+        recorded_by: session.name, person_name: "", phone: "", company: "", id_card_number: "", remarks: "Starting stock",
+        created_at: Date.now(),
+      };
+      await persistStockMovements([rec, ...stockMovements]);
+    }
+    notify(`${data.name} added${qty > 0 ? ` with ${qty} ${data.unit} on hand` : ""}`);
     setShowItemForm(false);
   };
   const saveItem = async (data) => {
-    await persistStockItems(stockItems.map((i) => (i.id === editingItem.id ? { ...i, ...data } : i)));
+    const { starting_quantity, ...itemFields } = data;
+    await persistStockItems(stockItems.map((i) => (i.id === editingItem.id ? { ...i, ...itemFields } : i)));
     notify("Item updated");
     setEditingItem(null);
   };
@@ -2561,10 +2613,11 @@ function StockItemForm({ item, onClose, onSave, onToggleActive }) {
   const [name, setName] = useState(item?.name || "");
   const [unit, setUnit] = useState(item?.unit || "pcs");
   const [minThreshold, setMinThreshold] = useState(item?.min_threshold ?? 5);
+  const [startingQuantity, setStartingQuantity] = useState(0);
 
   const save = () => {
     if (!name.trim()) return;
-    onSave({ name: name.trim(), unit: unit.trim() || "pcs", min_threshold: Number(minThreshold) || 0 });
+    onSave({ name: name.trim(), unit: unit.trim() || "pcs", min_threshold: Number(minThreshold) || 0, starting_quantity: Number(startingQuantity) || 0 });
   };
 
   return (
@@ -2574,7 +2627,14 @@ function StockItemForm({ item, onClose, onSave, onToggleActive }) {
         <Field label="Unit"><input style={inputStyle} value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="boxes, kg, rolls…" /></Field>
         <Field label="Reorder Threshold"><input type="number" min="0" style={inputStyle} value={minThreshold} onChange={(e) => setMinThreshold(e.target.value)} /></Field>
       </div>
-      <p style={{ fontSize: 12, color: C.ink50, marginTop: -4, marginBottom: 14 }}>You'll get a low-stock warning once the item's quantity on hand falls to or below this number.</p>
+      {isNew && (
+        <Field label={`Starting Quantity (how much is on hand right now, in ${unit || "units"})`}>
+          <input type="number" min="0" style={inputStyle} value={startingQuantity} onChange={(e) => setStartingQuantity(e.target.value)} />
+        </Field>
+      )}
+      <p style={{ fontSize: 12, color: C.ink50, marginTop: -4, marginBottom: 14 }}>
+        {isNew ? "This records an initial \"Stock In\" so the item shows the right quantity immediately. You'll get a low-stock warning once it falls to or below the reorder threshold." : "You'll get a low-stock warning once the item's quantity on hand falls to or below this number."}
+      </p>
       <Btn full tone="navy" onClick={save} disabled={!name.trim()}>{isNew ? "Add Item" : "Save Changes"}</Btn>
       {!isNew && (
         <div style={{ marginTop: 10 }}>
@@ -3640,6 +3700,22 @@ function EmployeeReport({ employees, attendance, settings }) {
 /* ---------------------------------------------------------------------
    SETTINGS (admin)
 --------------------------------------------------------------------- */
+function UserEditForm({ user, onClose, onSave }) {
+  const [name, setName] = useState(user.name);
+  const [username, setUsername] = useState(user.username);
+  const [newPassword, setNewPassword] = useState("");
+
+  return (
+    <Modal title="Edit Account" onClose={onClose}>
+      <Field label="Full name"><input autoFocus style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} /></Field>
+      <Field label="Username"><input style={inputStyle} value={username} onChange={(e) => setUsername(e.target.value)} autoCapitalize="none" autoCorrect="off" /></Field>
+      <Field label="New password (leave blank to keep current)"><input type="password" style={inputStyle} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="••••••••" /></Field>
+      <div style={{ fontSize: 11.5, color: C.ink50, marginBottom: 14 }}>Role: {user.role === "admin" ? "Manager / Admin" : "Security Guard"} (role can't be changed here — disable the account and create a new one to change role)</div>
+      <Btn full tone="navy" onClick={() => onSave({ name, username, newPassword })} disabled={!name.trim() || !username.trim()}>Save Changes</Btn>
+    </Modal>
+  );
+}
+
 function SettingsScreen({ settings, persistSettings, users, persistUsers, notify, loadSample, eraseAll, busy, sendReport, syncMode, canWriteShared, firebaseError }) {
   const [shiftHours, setShiftHours] = useState(settings.shift_hours || 9);
   const [newUser, setNewUser] = useState({ name: "", username: "", password: "", role: "guard" });
@@ -3706,6 +3782,21 @@ function SettingsScreen({ settings, persistSettings, users, persistUsers, notify
 
   const toggleUserActive = async (u) => {
     await persistUsers(users.map((x) => (x.id === u.id ? { ...x, active: !x.active } : x)));
+  };
+
+  const [editingUser, setEditingUser] = useState(null);
+  const saveUserEdit = async (data) => {
+    if (!data.name.trim() || !data.username.trim()) { notify("Name and username are required", "error"); return; }
+    const dupe = users.some((u) => u.id !== editingUser.id && u.username.trim().toLowerCase() === data.username.trim().toLowerCase());
+    if (dupe) { notify("That username is already taken", "error"); return; }
+    let patch = { name: data.name.trim(), username: data.username.trim() };
+    if (data.newPassword) {
+      if (data.newPassword.length < 4) { notify("New password must be at least 4 characters", "error"); return; }
+      patch.passwordHash = await sha256(data.newPassword);
+    }
+    await persistUsers(users.map((u) => (u.id === editingUser.id ? { ...u, ...patch } : u)));
+    setEditingUser(null);
+    notify("Account updated");
   };
 
   return (
@@ -3877,12 +3968,16 @@ function SettingsScreen({ settings, persistSettings, users, persistUsers, notify
                 <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, color: C.ink50, marginLeft: 8 }}>{u.username} · {u.role}</span>
                 {!u.active && <span style={{ marginLeft: 8 }}><Badge tone="missing">DISABLED</Badge></span>}
               </div>
-              <button onClick={() => toggleUserActive(u)} style={{ background: "none", border: `1px solid ${C.line}`, borderRadius: 6, padding: "4px 8px", fontSize: 11.5, cursor: "pointer" }}>
-                {u.active ? "Disable" : "Enable"}
-              </button>
+              <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                <button onClick={() => setEditingUser(u)} style={{ background: "none", border: `1px solid ${C.line}`, borderRadius: 6, padding: "4px 8px", fontSize: 11.5, cursor: "pointer" }}>Edit</button>
+                <button onClick={() => toggleUserActive(u)} style={{ background: "none", border: `1px solid ${C.line}`, borderRadius: 6, padding: "4px 8px", fontSize: 11.5, cursor: "pointer" }}>
+                  {u.active ? "Disable" : "Enable"}
+                </button>
+              </div>
             </div>
           ))}
         </div>
+        {editingUser && <UserEditForm user={editingUser} onClose={() => setEditingUser(null)} onSave={saveUserEdit} />}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           <Field label="Full name"><input style={inputStyle} value={newUser.name} onChange={(e) => setNewUser((n) => ({ ...n, name: e.target.value }))} /></Field>
           <Field label="Username"><input style={inputStyle} value={newUser.username} onChange={(e) => setNewUser((n) => ({ ...n, username: e.target.value }))} /></Field>
@@ -3938,17 +4033,6 @@ const rootEl = document.getElementById("root");
 const root = ReactDOM.createRoot(rootEl);
 root.render(<App />);
 
-</script><script>
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./service-worker.js')
-      .then(() => console.log('Service Worker registered'))
-      .catch(error => console.error('Service Worker registration failed:', error));
-  });
-}
 </script>
-
-</body>
-</html>
 </body>
 </html>
