@@ -666,25 +666,29 @@ function Badge({ tone = "neutral", children }) {
   );
 }
 
-function StatCard({ label, value, icon: Icon, tone }) {
+function StatCard({ label, value, icon: Icon, tone, onClick }) {
   const tones = {
-    amber: { solid: C.amber, soft: "#FEF3C7", fg: C.amberDeep },
-    green: { solid: C.green, soft: "#D1FAE5", fg: C.greenDeep },
-    red: { solid: C.red, soft: "#FEE2E2", fg: C.redDeep },
-    navy: { solid: C.navy, soft: "#DBEAFE", fg: C.slate },
-    slate: { solid: C.ink50, soft: "#F1F5F9", fg: C.ink50 },
+    amber: C.amber, green: C.green, red: C.red, navy: C.navy, slate: "#475569",
+    purple: "#7C3AED", teal: "#0D9488",
   };
-  const t = tones[tone] || tones.slate;
+  const bar = tones[tone] || tones.slate;
+  const Wrapper = onClick ? "button" : "div";
   return (
-    <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 14, padding: "16px 18px", boxShadow: "0 1px 3px rgba(15,23,42,0.06)" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-        <span style={{ fontSize: 11.5, fontFamily: FONT_SANS, fontWeight: 700, color: C.ink50, letterSpacing: 0.3, textTransform: "uppercase" }}>{label}</span>
-        <div style={{ width: 30, height: 30, borderRadius: 8, background: t.soft, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-          <Icon size={15} color={t.fg} />
+    <Wrapper onClick={onClick} style={{
+      background: "#fff", border: `1px solid ${C.line}`, borderRadius: 14, padding: "14px 16px 0", position: "relative",
+      overflow: "hidden", boxShadow: "0 1px 3px rgba(15,23,42,0.06)", display: "block", width: "100%", textAlign: "left",
+      cursor: onClick ? "pointer" : "default", fontFamily: FONT_SANS,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 11, marginBottom: 12 }}>
+        <div style={{ width: 40, height: 40, borderRadius: 10, background: bar, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <Icon size={19} color="#fff" />
         </div>
+        <div style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600, color: C.ink50, lineHeight: 1.25 }}>{label}</div>
+        {onClick && <ChevronRight size={16} color={C.ink50} style={{ flexShrink: 0 }} />}
       </div>
-      <div style={{ fontFamily: FONT_SERIF, fontSize: 30, fontWeight: 700, color: C.ink, lineHeight: 1 }}>{value}</div>
-    </div>
+      <div style={{ fontFamily: FONT_SERIF, fontSize: 27, fontWeight: 800, color: C.ink, lineHeight: 1, paddingBottom: 14 }}>{value}</div>
+      <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 3, background: bar }} />
+    </Wrapper>
   );
 }
 
@@ -1226,22 +1230,30 @@ function Header({ session, onLogout, syncMode, canWriteShared }) {
   const syncLabel = syncMode === "firebase" ? "Synced via Firebase" : syncMode === "synced" ? (canWriteShared === false ? "Synced · read-only" : "Synced across devices") : "Local device only";
 
   return (
-    <header className="no-print" style={{ background: "#fff", padding: "12px 16px", position: "sticky", top: 0, zIndex: 40, borderBottom: `3px solid ${C.aramexRed}`, boxShadow: "0 1px 3px rgba(15,23,42,0.06)" }}>
-      <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+    <header className="no-print" style={{
+      background: `linear-gradient(120deg, ${C.aramexRed}, #9A0020)`, padding: "16px 16px 18px",
+      position: "sticky", top: 0, zIndex: 40, boxShadow: "0 2px 10px rgba(228,0,43,0.25)",
+      overflow: "hidden",
+    }}>
+      <div style={{ position: "absolute", top: -50, right: -30, width: 170, height: 170, borderRadius: "50%", background: "rgba(255,255,255,0.06)" }} />
+      <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, position: "relative" }}>
         <div>
-          <div style={{ fontFamily: FONT_SANS, fontSize: 21, fontWeight: 800, color: C.aramexRed, letterSpacing: 0.5, lineHeight: 1.1 }}>ARAMEX</div>
-          <div style={{ fontFamily: FONT_SERIF, fontSize: 12.5, color: C.ink50, lineHeight: 1.1 }}>Gatehouse Register</div>
-          <div style={{ fontFamily: FONT_MONO, fontSize: 9.5, color: C.ink50, letterSpacing: 0.3, display: "flex", alignItems: "center", gap: 5, marginTop: 4 }}>
+          <div style={{ fontFamily: FONT_SANS, fontSize: 22, fontWeight: 800, color: "#fff", letterSpacing: -0.5, lineHeight: 1.1, textTransform: "lowercase" }}>aramex</div>
+          <div style={{ fontFamily: FONT_SANS, fontSize: 12.5, color: "rgba(255,255,255,0.88)", fontWeight: 600, lineHeight: 1.3 }}>Gatehouse Register</div>
+          <div style={{ fontFamily: FONT_MONO, fontSize: 9.5, color: "rgba(255,255,255,0.7)", letterSpacing: 0.3, display: "flex", alignItems: "center", gap: 5, marginTop: 4 }}>
             <span style={{ width: 5, height: 5, borderRadius: "50%", background: dotColor, display: "inline-block" }} />
             {syncLabel.toUpperCase()}
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: C.ink }}>{session.name}</div>
-            <div style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: C.aramexRed }}>{session.role.toUpperCase()}</div>
+          <div style={{ width: 38, height: 38, borderRadius: "50%", background: "rgba(255,255,255,0.18)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <Users size={18} color="#fff" />
           </div>
-          <button onClick={onLogout} title="Log out" style={{ background: C.paperDim, border: "none", borderRadius: 7, padding: 8, cursor: "pointer", color: C.ink }}>
+          <div style={{ textAlign: "left" }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>{session.name}</div>
+            <div style={{ fontFamily: FONT_MONO, fontSize: 10, color: "rgba(255,255,255,0.85)" }}>{session.role.toUpperCase()}</div>
+          </div>
+          <button onClick={onLogout} title="Log out" style={{ background: "rgba(255,255,255,0.16)", border: "none", borderRadius: 7, padding: 8, cursor: "pointer", color: "#fff" }}>
             <LogOut size={17} />
           </button>
         </div>
@@ -1577,16 +1589,26 @@ function Dashboard({ session, employees, attendance, settings, empById, today, g
   return (
     <div>
       <div style={{
-        background: `linear-gradient(135deg, ${C.navy}, ${C.slate})`, borderRadius: 16, padding: "22px 24px", marginBottom: 22,
-        color: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12,
-        boxShadow: "0 4px 16px rgba(37,99,235,0.2)",
+        background: "#fff", borderRadius: 18, marginBottom: 22, border: `1px solid ${C.line}`,
+        boxShadow: "0 2px 10px rgba(15,23,42,0.07)", display: "flex", overflow: "hidden", minHeight: 150,
       }}>
-        <div>
-          <div style={{ fontFamily: FONT_SERIF, fontSize: 22, marginBottom: 4 }}>{timeGreeting()}, {session.name.split(" ")[0]}</div>
-          <div style={{ fontSize: 13, color: "rgba(255,255,255,0.82)" }}>{fmtDate(today)} · Today's Dashboard</div>
+        <div style={{ flex: "1 1 58%", padding: "20px 22px", display: "flex", flexDirection: "column", justifyContent: "center", minWidth: 0 }}>
+          <div style={{ fontSize: 13.5, color: C.ink50, marginBottom: 2 }}>☀️ {timeGreeting()},</div>
+          <div style={{ fontFamily: FONT_SERIF, fontSize: 27, fontWeight: 800, color: C.ink, lineHeight: 1.15, marginBottom: 5 }}>{session.name.split(" ")[0]}</div>
+          <div style={{ fontSize: 12.5, color: C.ink50, marginBottom: 12 }}>{fmtDate(today)} · Today's Dashboard</div>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: C.aramexRed, color: "#fff", borderRadius: 20, padding: "5px 14px", fontSize: 11, fontWeight: 700, letterSpacing: 0.3, width: "fit-content" }}>
+            <ShieldCheck size={13} /> {session.role.toUpperCase()}
+          </div>
         </div>
-        <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: "#fff", background: "rgba(255,255,255,0.18)", padding: "6px 14px", borderRadius: 20, fontWeight: 600, letterSpacing: 0.3 }}>
-          {session.role.toUpperCase()}
+        <div style={{
+          flex: "0 0 40%", position: "relative", background: `linear-gradient(135deg, ${C.aramexRed}, #8C001E)`,
+          clipPath: "polygon(22% 0, 100% 0, 100% 100%, 0% 100%)", display: "flex", alignItems: "center", justifyContent: "center",
+          padding: "20px 14px", textAlign: "center",
+        }}>
+          <div>
+            <div style={{ color: "#fff", fontFamily: FONT_SANS, fontWeight: 800, fontSize: 15, lineHeight: 1.3 }}>Gatehouse<br />Register</div>
+            <div style={{ color: "rgba(255,255,255,0.82)", fontSize: 9, marginTop: 7, letterSpacing: 1.2, fontWeight: 600 }}>SECURITY · ACCESS · CONTROL</div>
+          </div>
         </div>
       </div>
 
@@ -1644,17 +1666,17 @@ function Dashboard({ session, employees, attendance, settings, empById, today, g
         </div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 10, marginBottom: 22 }}>
-        <StatCard label="Total Employees" value={activeEmployees.length} icon={Users} tone="navy" />
-        <StatCard label="Checked In Today" value={todays.length} icon={DoorOpen} tone="green" />
-        <StatCard label="Currently Inside" value={inside.length} icon={Clock} tone="amber" />
-        <StatCard label="Checked Out Today" value={checkedOutToday.length} icon={DoorClosed} tone="slate" />
-        <StatCard label="Not Checked In" value={notCheckedIn.length} icon={XCircle} tone="red" />
-        <StatCard label="On Leave Today" value={onLeaveToday.length} icon={UserX} tone="slate" />
-        <StatCard label="In Overtime" value={overtimeToday.length} icon={AlertTriangle} tone="amber" />
-        <StatCard label="Visitors/Contractors Inside" value={visitorsInside.length} icon={UserPlus} tone="navy" />
-        <StatCard label="Low Stock Items" value={lowStockItems.length} icon={Package} tone={lowStockItems.length ? "red" : "slate"} />
-        <StatCard label="Open Incidents" value={openIncidents.length} icon={AlertTriangle} tone={seriousOpenIncidents.length ? "red" : (openIncidents.length ? "amber" : "slate")} />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 22 }}>
+        <StatCard label="Total Employees" value={activeEmployees.length} icon={Users} tone="red" onClick={session.role === "admin" ? () => goto("employees") : undefined} />
+        <StatCard label="Checked In Today" value={todays.length} icon={CalendarDays} tone="teal" onClick={() => goto("attendance")} />
+        <StatCard label="Currently Inside" value={inside.length} icon={Clock} tone="amber" onClick={() => goto("attendance")} />
+        <StatCard label="Checked Out Today" value={checkedOutToday.length} icon={DoorClosed} tone="slate" onClick={() => goto("attendance")} />
+        <StatCard label="Not Checked In" value={notCheckedIn.length} icon={XCircle} tone="red" onClick={() => goto("attendance")} />
+        <StatCard label="On Leave Today" value={onLeaveToday.length} icon={UserX} tone="slate" onClick={() => goto("leave")} />
+        <StatCard label="In Overtime" value={overtimeToday.length} icon={AlertTriangle} tone="amber" onClick={() => goto("attendance")} />
+        <StatCard label="Visitors/Contractors Inside" value={visitorsInside.length} icon={UserPlus} tone="purple" onClick={() => goto("visitors")} />
+        <StatCard label="Low Stock Items" value={lowStockItems.length} icon={Package} tone="slate" onClick={() => goto("inventory")} />
+        <StatCard label="Open Incidents" value={openIncidents.length} icon={AlertTriangle} tone="red" onClick={() => goto("incidents")} />
       </div>
 
       <SectionTitle title="Currently Inside" sub={`${inside.length} on site`} />
@@ -1697,6 +1719,15 @@ function Dashboard({ session, employees, attendance, settings, empById, today, g
             })}
           </TableScroll>
         )}
+      </div>
+
+      <div style={{ marginTop: 22, background: C.paperDim, border: `1px solid ${C.line}`, borderRadius: 12, padding: "14px 18px", display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ width: 38, height: 38, borderRadius: 10, background: C.aramexRed, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <ShieldCheck size={19} color="#fff" />
+        </div>
+        <div style={{ fontFamily: FONT_SERIF, fontSize: 14.5, fontWeight: 700, color: C.ink, lineHeight: 1.3 }}>
+          Trusted Guards<br />Secure Gates
+        </div>
       </div>
     </div>
   );
@@ -2512,9 +2543,14 @@ function InventoryScreen({ session, stockItems, stockMovements, persistStockItem
   };
   const logMovement = async (data) => {
     const now = new Date();
-    const rec = { id: uid("sm_"), ...data, date: todayStr(now), time: nowTimeStr(now), recorded_by: session.name, created_at: Date.now() };
+    const { backdateDate, backdateTime, ...fields } = data;
+    const rec = {
+      id: uid("sm_"), ...fields,
+      date: backdateDate || todayStr(now), time: backdateTime ? `${backdateTime}:00` : nowTimeStr(now),
+      recorded_by: session.name, created_at: Date.now(),
+    };
     await persistStockMovements([rec, ...stockMovements]);
-    notify(`${data.type === "IN" ? "Stock in" : "Stock out"} recorded`);
+    notify(`${data.type === "IN" ? "Stock in" : "Stock out"} recorded${backdateDate ? ` for ${fmtDate(backdateDate)}` : ""}`);
     setShowMoveForm(null);
   };
 
@@ -2652,11 +2688,24 @@ function StockMovementForm({ item, type, onClose, onSave }) {
   const [company, setCompany] = useState("");
   const [idCard, setIdCard] = useState("");
   const [remarks, setRemarks] = useState("");
+  const [backdate, setBackdate] = useState(false);
+  const [bdDate, setBdDate] = useState(todayStr());
+  const [bdTime, setBdTime] = useState(nowTimeStr().slice(0, 5));
+  const [bdError, setBdError] = useState("");
 
   const save = () => {
     const q = Number(quantity);
     if (!q || q <= 0) return;
-    onSave({ item_id: item.id, type, quantity: q, person_name: personName.trim(), phone: phone.trim(), company: company.trim(), id_card_number: idCard.trim(), remarks: remarks.trim() });
+    if (backdate) {
+      const now = new Date();
+      const chosen = new Date(`${bdDate}T${bdTime}:00`);
+      if (chosen.getTime() > now.getTime() + 60000) { setBdError("That date/time is in the future"); return; }
+    }
+    onSave({
+      item_id: item.id, type, quantity: q, person_name: personName.trim(), phone: phone.trim(), company: company.trim(),
+      id_card_number: idCard.trim(), remarks: remarks.trim(),
+      backdateDate: backdate ? bdDate : null, backdateTime: backdate ? bdTime : null,
+    });
   };
 
   return (
@@ -2672,6 +2721,27 @@ function StockMovementForm({ item, type, onClose, onSave }) {
         <Field label={type === "IN" ? "Company / Supplier" : "Department"}><input style={inputStyle} value={company} onChange={(e) => setCompany(e.target.value)} /></Field>
       </div>
       <Field label="ID / Card Number (optional)"><input style={inputStyle} value={idCard} onChange={(e) => setIdCard(e.target.value)} placeholder="whatever ID the gate records, if any" /></Field>
+
+      {!backdate ? (
+        <button type="button" onClick={() => { setBackdate(true); setBdError(""); }} style={{
+          background: "none", border: "none", color: C.navy, fontSize: 12.5, fontWeight: 600,
+          cursor: "pointer", textDecoration: "underline", padding: 0, marginBottom: 14, display: "block",
+        }}>
+          This actually happened earlier? Set the real date &amp; time
+        </button>
+      ) : (
+        <div style={{ background: "#FCEFE0", border: `1px solid #F2D6A6`, borderRadius: 9, padding: "12px 14px", marginBottom: 14 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 9 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: C.amberDeep, letterSpacing: 0.3 }}>ACTUAL DATE &amp; TIME</span>
+            <button type="button" onClick={() => { setBackdate(false); setBdError(""); }} style={{ background: "none", border: "none", color: C.ink50, cursor: "pointer", fontSize: 12 }}>Use now instead</button>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <input type="date" style={{ ...inputStyle, background: "#fff" }} value={bdDate} max={todayStr()} onChange={(e) => { setBdDate(e.target.value); setBdError(""); }} />
+            <input type="time" style={{ ...inputStyle, background: "#fff" }} value={bdTime} onChange={(e) => { setBdTime(e.target.value); setBdError(""); }} />
+          </div>
+          {bdError && <div style={{ fontSize: 12, color: C.redDeep, marginTop: 6 }}>{bdError}</div>}
+        </div>
+      )}
       <Field label="Remarks (optional)"><input style={inputStyle} value={remarks} onChange={(e) => setRemarks(e.target.value)} /></Field>
       <Btn full tone={type === "IN" ? "green" : "red"} onClick={save} disabled={!Number(quantity)}>Record {type === "IN" ? "Stock In" : "Stock Out"}</Btn>
     </Modal>
